@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9c93348484a2454388110c3e4066602, type: 3}
+  m_Name: Worry Seed
+  m_EditorClassIdentifier: 
+  attackName: Abatidoras
+  description: "Se siembra en el objetivo una semilla que causa preocupaci\xF3n.
+    Le impide dormir al activar su habilidad Insomnio."
+  type: 0
+  attackCategory: 0
+  power: 0
+  accuracy: 0
+  pp: 0
+  hasSecondaryEffect: 0
+  secondaryEffectDescription: 

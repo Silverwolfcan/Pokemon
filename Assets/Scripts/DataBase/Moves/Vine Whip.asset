@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9c93348484a2454388110c3e4066602, type: 3}
+  m_Name: Vine Whip
+  m_EditorClassIdentifier: 
+  attackName: "L\xE1tigo Cepa"
+  description: "El objetivo es golpeado con enredaderas delgadas con forma de l\xE1tigo
+    para infligir da\xF1o."
+  type: 3
+  attackCategory: 0
+  power: 45
+  accuracy: 100
+  pp: 25
+  hasSecondaryEffect: 0
+  secondaryEffectDescription: 

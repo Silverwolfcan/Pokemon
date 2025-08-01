@@ -1,0 +1,69 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba86bfa4311c30c43acbc5163d849b26, type: 3}
+  m_Name: 0001_Bulbasaur
+  m_EditorClassIdentifier: 
+  pokemonName: Bulbasaur
+  displayName: Bulbasaur
+  description: "Durante alg\xFAn tiempo despu\xE9s de su nacimiento, crece tomando
+    nutrientes de las semillas que tiene en la espalda."
+  nationalDexNumber: 1
+  pokemonSprite: {fileID: 21300000, guid: d021c646804acc743828d788ec014160, type: 3}
+  prefab: {fileID: 4666543264376489976, guid: c081f252f28f8ff43bae52138077f41f, type: 3}
+  primaryType: 3
+  secondaryType: 7
+  catchRate: 0.45
+  behaviorType: 0
+  baseHP: 45
+  baseAttack: 49
+  baseDefense: 49
+  baseSpAttack: 65
+  baseSpDefense: 65
+  baseSpeed: 45
+  baseExperienceYield: 64
+  growthRate: 2
+  genderType: 0
+  maleRatio: 0.875
+  possibleAbilities:
+  - {fileID: 11400000, guid: 5f89a50214f252a45991b796b2357008, type: 2}
+  - {fileID: 11400000, guid: d4196293b19a5524cb80a97e779cf764, type: 2}
+  learnableAttacks:
+  - attackData: {fileID: 11400000, guid: d23df1c74930f194281e04d23a1979fc, type: 2}
+    level: 1
+  - attackData: {fileID: 11400000, guid: 540baae129b02354cbd8b8a4fdb70562, type: 2}
+    level: 1
+  - attackData: {fileID: 11400000, guid: 1ebe32d6f2f7a9549b713a97fb2a3915, type: 2}
+    level: 3
+  - attackData: {fileID: 11400000, guid: 8688ce58ca7dea54ba5a79eb8a2b9100, type: 2}
+    level: 6
+  - attackData: {fileID: 11400000, guid: 27d07fe7bc479ef45b0d65f8b8e48892, type: 2}
+    level: 9
+  - attackData: {fileID: 11400000, guid: c7fdeda539348114b915ba1487acb6ac, type: 2}
+    level: 12
+  - attackData: {fileID: 11400000, guid: f293b636655246c4c8dea09d2d87767c, type: 2}
+    level: 15
+  - attackData: {fileID: 11400000, guid: 543be320e5abef84aacfa9d68d33b92f, type: 2}
+    level: 15
+  - attackData: {fileID: 11400000, guid: 8e92f1e4835e6b046a58ce085b02835c, type: 2}
+    level: 18
+  - attackData: {fileID: 11400000, guid: d4847d0596834f64a89d8af0f8c6f3ee, type: 2}
+    level: 21
+  - attackData: {fileID: 11400000, guid: ac4853ab6fac8454bbf995a982eb170f, type: 2}
+    level: 24
+  - attackData: {fileID: 11400000, guid: 620d91b959c7a0142b56a3c363eff1ee, type: 2}
+    level: 27
+  - attackData: {fileID: 11400000, guid: 14000ac988420214585aeb82c0a8e932, type: 2}
+    level: 30
+  - attackData: {fileID: 11400000, guid: c2de95323d7327147b25b582283020d5, type: 2}
+    level: 33
+  - attackData: {fileID: 11400000, guid: c478a8b22f4fcf14d8708ad953453e99, type: 2}
+    level: 36
