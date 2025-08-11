@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a9c93348484a2454388110c3e4066602, type: 3}
   m_Name: Tackle
   m_EditorClassIdentifier: 
-  attackName: Placaje
+  moveName: Placaje
   description: "Un ataque f\xEDsico en el que el usuario carga y golpea al objetivo
     con todo su cuerpo."
   type: 0

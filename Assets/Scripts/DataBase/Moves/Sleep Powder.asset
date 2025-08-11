@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a9c93348484a2454388110c3e4066602, type: 3}
   m_Name: Sleep Powder
   m_EditorClassIdentifier: 
-  attackName: 
+  moveName: "Somn\xEDfero"
   description: "El usuario esparce una gran nube de polvo que induce al sue\xF1o
     alrededor del objetivo."
   type: 3

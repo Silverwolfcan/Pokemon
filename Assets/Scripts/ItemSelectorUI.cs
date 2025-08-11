@@ -2,12 +2,9 @@
 using UnityEngine.UI;
 using TMPro;
 using System.Collections.Generic;
+using System.Linq;
 
-public enum SelectorMode
-{
-    Pokeball,
-    Pokemon
-}
+public enum SelectorMode { Pokeball, Pokemon }
 
 public class ItemSelectorUI : MonoBehaviour
 {
@@ -41,11 +38,22 @@ public class ItemSelectorUI : MonoBehaviour
 
     public PlayerController playerController;
 
-
-    //Variables de indice para guardar la posicion que estamos del menu
     private int pokeballIndex = 0;
     private int pokemonIndex = 0;
 
+    // ---------------- lifecycle ----------------
+    private void OnEnable()
+    {
+        // Suscribimos a los cambios de la party
+        var sm = PokemonStorageManager.Instance;
+        if (sm != null) sm.OnPartyChanged += HandlePartyChanged;
+    }
+
+    private void OnDisable()
+    {
+        var sm = PokemonStorageManager.Instance;
+        if (sm != null) sm.OnPartyChanged -= HandlePartyChanged;
+    }
 
     void Start()
     {
@@ -54,24 +62,41 @@ public class ItemSelectorUI : MonoBehaviour
 
     private System.Collections.IEnumerator InitializeSelectorUI()
     {
-        yield return null; // Espera 1 frame
-
+        yield return null;
         SetMode(currentMode);
         UpdateUI();
     }
 
-
     void Update()
     {
         float scroll = Input.GetAxis("Mouse ScrollWheel");
-
-        if (scroll < 0f)
-            SelectNext();
-        else if (scroll > 0f)
-            SelectPrevious();
+        if (scroll < 0f) SelectNext();
+        else if (scroll > 0f) SelectPrevious();
     }
 
+    // Evento: la party ha cambiado (añadir, quitar, mover, swap…)
+    private void HandlePartyChanged()
+    {
+        // Guardamos el seleccionado actual (si existía)
+        string selectedId = GetCurrentPokemon()?.UniqueID;
 
+        BuildPartyList();                 // reconstruye SOLO con pokémon reales
+        // Intentamos mantener selección
+        int newIndex = 0;
+        if (!string.IsNullOrEmpty(selectedId))
+        {
+            for (int i = 0; i < capturedPokemon.Count; i++)
+                if (capturedPokemon[i].UniqueID == selectedId) { newIndex = i; break; }
+        }
+
+        currentIndex = Mathf.Clamp(newIndex, 0, Mathf.Max(0, capturedPokemon.Count - 1));
+        pokemonIndex = currentIndex;
+
+        // Refrescamos la UI si estamos en modo Pokémon
+        if (currentMode == SelectorMode.Pokemon) UpdateUI_Pokemon();
+    }
+
+    // -------------------- Modo --------------------
     public void SetMode(SelectorMode mode)
     {
         currentMode = mode;
@@ -82,19 +107,47 @@ public class ItemSelectorUI : MonoBehaviour
 
         if (mode == SelectorMode.Pokeball)
         {
-            pokeballInventory = InventoryManager.Instance.inventory.FindAll(e => e.item.category == ItemCategory.Pokeball && e.unlocked);
+            BuildPokeballList();
+            ClampCurrentIndex(pokeballInventory.Count);
             UpdateUI_Pokeball();
         }
         else
         {
-            capturedPokemon = GameManager.Instance.playerTeam;
+            BuildPartyList(); // filtra huecos nulos
+            ClampCurrentIndex(capturedPokemon.Count);
             UpdateUI_Pokemon();
         }
     }
 
+    // -------------------- List builders --------------------
+    private void BuildPokeballList()
+    {
+        pokeballInventory = InventoryManager.Instance.inventory
+            .FindAll(e => e.item.category == ItemCategory.Pokeball && e.unlocked);
+    }
+
+    private void BuildPartyList()
+    {
+        capturedPokemon = new List<PokemonInstance>();
+
+        var party = PokemonStorageManager.Instance?.PlayerParty;
+        if (party == null) return;
+
+        // Usa el ToList() que expone tu PokemonParty (6 slots con null en huecos)
+        var slots = party.ToList();
+        for (int i = 0; i < slots.Count; i++)
+        {
+            var p = slots[i];
+            if (p != null && p.species != null)
+                capturedPokemon.Add(p);
+        }
+    }
+
+    // -------------------- Navegación --------------------
     void SelectNext()
     {
         int count = currentMode == SelectorMode.Pokeball ? pokeballInventory.Count : capturedPokemon.Count;
+        if (count == 0) return;
         if (currentIndex < count - 1)
         {
             currentIndex++;
@@ -103,9 +156,10 @@ public class ItemSelectorUI : MonoBehaviour
         }
     }
 
-
     void SelectPrevious()
     {
+        int count = currentMode == SelectorMode.Pokeball ? pokeballInventory.Count : capturedPokemon.Count;
+        if (count == 0) return;
         if (currentIndex > 0)
         {
             currentIndex--;
@@ -116,119 +170,129 @@ public class ItemSelectorUI : MonoBehaviour
 
     void SaveCurrentIndex()
     {
-        if (currentMode == SelectorMode.Pokeball)
-            pokeballIndex = currentIndex;
-        else
-            pokemonIndex = currentIndex;
+        if (currentMode == SelectorMode.Pokeball) pokeballIndex = currentIndex;
+        else pokemonIndex = currentIndex;
     }
 
+    void ClampCurrentIndex(int count)
+    {
+        if (count <= 0) { currentIndex = 0; SaveCurrentIndex(); return; }
+        currentIndex = Mathf.Clamp(currentIndex, 0, count - 1);
+        SaveCurrentIndex();
+    }
 
     public void UpdateUI()
     {
-        SaveCurrentIndex();
-
         if (currentMode == SelectorMode.Pokeball)
+        {
+            BuildPokeballList();
+            ClampCurrentIndex(pokeballInventory.Count);
             UpdateUI_Pokeball();
+        }
         else
+        {
+            BuildPartyList(); // re-filtra por si la party cambió
+            ClampCurrentIndex(capturedPokemon.Count);
             UpdateUI_Pokemon();
+        }
     }
 
-
+    // -------------------- Pokéballs --------------------
     void UpdateUI_Pokeball()
     {
         if (pokeballInventory.Count == 0)
         {
-            imgActiveBall.sprite = null;
-            imgActiveBall.color = new Color(1, 1, 1, 0);
+            HideImage(imgActiveBall);
             txtNameBalls.text = "";
             txtNumberBalls.text = "";
-            imgPreviousBall.enabled = false;
-            imgNextBall.enabled = false;
+            HideImage(imgPreviousBall);
+            HideImage(imgNextBall);
             return;
         }
 
         var entry = pokeballInventory[currentIndex];
-        imgActiveBall.sprite = entry.item.icon;
-        imgActiveBall.color = entry.quantity > 0 ? colorDisponible : colorAgotado;
+        ShowImage(imgActiveBall, entry.item.icon, entry.quantity > 0 ? colorDisponible : colorAgotado);
         txtNameBalls.text = entry.item.itemName;
         txtNumberBalls.text = "x" + entry.quantity;
 
-        UpdatePreviewImages_Pokeball();
+        // Prev
+        if (currentIndex > 0)
+        {
+            var e = pokeballInventory[currentIndex - 1];
+            ShowImage(imgPreviousBall, e.item.icon, e.quantity > 0 ? colorDisponible : colorAgotado);
+        }
+        else HideImage(imgPreviousBall);
+
+        // Next
+        if (currentIndex < pokeballInventory.Count - 1)
+        {
+            var e = pokeballInventory[currentIndex + 1];
+            ShowImage(imgNextBall, e.item.icon, e.quantity > 0 ? colorDisponible : colorAgotado);
+        }
+        else HideImage(imgNextBall);
     }
 
+    // -------------------- Pokémon --------------------
     void UpdateUI_Pokemon()
     {
         if (capturedPokemon.Count == 0)
         {
-            imgActivePokemon.sprite = null;
-            imgActivePokemon.color = new Color(1, 1, 1, 0);
+            HideImage(imgActivePokemon);
             txtNamePokemon.text = "";
             txtLevelPokemon.text = "";
-            imgPreviousPokemon.enabled = false;
-            imgNextPokemon.enabled = false;
+            HideImage(imgPreviousPokemon);
+            HideImage(imgNextPokemon);
             return;
         }
 
-        PokemonInstance selectedPokemon = GetCurrentPokemon();
-        PokemonInstance active = playerController?.GetActivePokemon();
+        var selected = capturedPokemon[currentIndex];
+        var active = playerController ? playerController.GetActivePokemon() : null;
 
-        imgActivePokemon.sprite = selectedPokemon.baseData.pokemonSprite;
+        bool isActive = active != null && selected.UniqueID == active.UniqueID;
+        ShowImage(imgActivePokemon, selected.species.pokemonSprite, isActive ? colorAgotado : colorDisponible);
+        txtNamePokemon.text = selected.species.pokemonName;
+        txtLevelPokemon.text = isActive ? "Activo" : $"Nv. {selected.level}";
 
-        bool isActive = active != null && selectedPokemon.uniqueID == active.uniqueID;
-        imgActivePokemon.color = isActive ? colorAgotado : colorDisponible;
-        txtLevelPokemon.text = isActive ? "Activo" : $"Nv. {selectedPokemon.level}";
-        txtNamePokemon.text = selectedPokemon.baseData.pokemonName;
+        // Prev
+        if (currentIndex > 0)
+        {
+            var prev = capturedPokemon[currentIndex - 1];
+            var col = (active != null && prev.UniqueID == active.UniqueID) ? colorAgotado : colorDisponible;
+            ShowImage(imgPreviousPokemon, prev.species.pokemonSprite, col);
+        }
+        else HideImage(imgPreviousPokemon);
 
-        UpdatePreviewImages_Pokemon();
+        // Next
+        if (currentIndex < capturedPokemon.Count - 1)
+        {
+            var next = capturedPokemon[currentIndex + 1];
+            var col = (active != null && next.UniqueID == active.UniqueID) ? colorAgotado : colorDisponible;
+            ShowImage(imgNextPokemon, next.species.pokemonSprite, col);
+        }
+        else HideImage(imgNextPokemon);
     }
 
-
-    void UpdatePreviewImages_Pokeball()
+    // -------------------- Helpers de imagen --------------------
+    static void HideImage(Image img)
     {
-        imgPreviousBall.enabled = currentIndex > 0;
-        imgNextBall.enabled = currentIndex < pokeballInventory.Count - 1;
-
-        if (imgPreviousBall.enabled)
-        {
-            var prev = currentIndex - 1;
-            imgPreviousBall.sprite = pokeballInventory[prev].item.icon;
-            imgPreviousBall.color = pokeballInventory[prev].quantity > 0 ? colorDisponible : colorAgotado;
-        }
-
-        if (imgNextBall.enabled)
-        {
-            var next = currentIndex + 1;
-            imgNextBall.sprite = pokeballInventory[next].item.icon;
-            imgNextBall.color = pokeballInventory[next].quantity > 0 ? colorDisponible : colorAgotado;
-        }
+        if (!img) return;
+        img.sprite = null;
+        img.color = new Color(1, 1, 1, 0); // alpha 0
+        img.enabled = false;
+        img.gameObject.SetActive(false);
     }
 
-
-    void UpdatePreviewImages_Pokemon()
+    static void ShowImage(Image img, Sprite sprite, Color color)
     {
-        PokemonInstance active = playerController?.GetActivePokemon();
-
-        imgPreviousPokemon.enabled = currentIndex > 0;
-        imgNextPokemon.enabled = currentIndex < capturedPokemon.Count - 1;
-
-        if (imgPreviousPokemon.enabled)
-        {
-            int prev = currentIndex - 1;
-            imgPreviousPokemon.sprite = capturedPokemon[prev].baseData.pokemonSprite;
-            imgPreviousPokemon.color = (active != null && capturedPokemon[prev].uniqueID == active.uniqueID) ? colorAgotado : colorDisponible;
-        }
-
-        if (imgNextPokemon.enabled)
-        {
-            int next = currentIndex + 1;
-            imgNextPokemon.sprite = capturedPokemon[next].baseData.pokemonSprite;
-            imgNextPokemon.color = (active != null && capturedPokemon[next].uniqueID == active.uniqueID) ? colorAgotado : colorDisponible;
-        }
+        if (!img) return;
+        if (sprite == null) { HideImage(img); return; }
+        img.gameObject.SetActive(true);
+        img.enabled = true;
+        img.sprite = sprite;
+        img.color = color; // alpha 1 en 'color'
     }
 
-
-
-
+    // -------------------- API pública --------------------
     public ItemEntry GetCurrentEntry()
     {
         var item = pokeballInventory[currentIndex].item;
@@ -244,10 +308,8 @@ public class ItemSelectorUI : MonoBehaviour
 
     public void RefreshCapturedPokemon()
     {
-        if (currentMode == SelectorMode.Pokemon)
-        {
-            capturedPokemon = GameManager.Instance.playerTeam;
-            UpdateUI_Pokemon();
-        }
+        BuildPartyList();
+        ClampCurrentIndex(capturedPokemon.Count);
+        if (currentMode == SelectorMode.Pokemon) UpdateUI_Pokemon();
     }
 }

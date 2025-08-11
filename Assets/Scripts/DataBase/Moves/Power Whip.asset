@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a9c93348484a2454388110c3e4066602, type: 3}
   m_Name: Power Whip
   m_EditorClassIdentifier: 
-  attackName: Latigazo
+  moveName: Latigazo
   description: "El usuario hace girar violentamente sus enredaderas, tent\xE1culos
     o similares para azotar duramente al objetivo."
   type: 3

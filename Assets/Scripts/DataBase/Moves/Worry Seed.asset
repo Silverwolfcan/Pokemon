@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a9c93348484a2454388110c3e4066602, type: 3}
   m_Name: Worry Seed
   m_EditorClassIdentifier: 
-  attackName: Abatidoras
+  moveName: Abatidoras
   description: "Se siembra en el objetivo una semilla que causa preocupaci\xF3n.
     Le impide dormir al activar su habilidad Insomnio."
   type: 0

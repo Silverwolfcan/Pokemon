@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a9c93348484a2454388110c3e4066602, type: 3}
   m_Name: Leech Seed
   m_EditorClassIdentifier: 
-  attackName: Drenadoras
+  moveName: Drenadoras
   description: Se planta una semilla en el objetivo. Le roba algunos PS cada turno.
   type: 3
   attackCategory: 2

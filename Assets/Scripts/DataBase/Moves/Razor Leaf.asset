@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a9c93348484a2454388110c3e4066602, type: 3}
   m_Name: Razor Leaf
   m_EditorClassIdentifier: 
-  attackName: Hoja Afilada
+  moveName: Hoja Afilada
   description: "Lanza hojas afiladas para atacar a los Pok\xE9mon rivales. Los golpes
     cr\xEDticos son m\xE1s f\xE1ciles de asestar."
   type: 0

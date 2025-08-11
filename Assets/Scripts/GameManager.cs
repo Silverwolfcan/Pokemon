@@ -1,72 +1,28 @@
 using UnityEngine;
-using System.Collections.Generic;
 
 public class GameManager : MonoBehaviour
 {
-    public static GameManager Instance;
-
-    [Header("Configuración global")]
-    [Range(0f, 1f)] public float shinyProbability = 0.01f;
-
-    [Header("Equipo del jugador")]
-    public List<PokemonInstance> playerTeam = new List<PokemonInstance>(6);
-
-    [Header("UI del equipo")]
-    public PokemonTeamUIManager teamUIManager;
-
     private void Awake()
     {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
-
-        // ——— CARGAR equipo guardado al iniciar ———
-        playerTeam = SaveSystem.LoadTeam();
-        if (teamUIManager != null)
-        {
-            teamUIManager.currentTeam = playerTeam;
-            teamUIManager.RefreshUI();
-        }
-        else
-        {
-            Debug.LogWarning("No se encontró el PokemonTeamUIManager al cargar el equipo.");
-        }
+        Ensure<SaveManager>("SaveManager");
+        Ensure<PokemonStorageManager>("PokemonStorageManager");
+        Ensure<DragDropController>("DragDropController");
     }
 
-    public void CapturePokemon(PokemonInstance wildInstance)
+    private static T Ensure<T>(string goName) where T : Component
     {
-        if (playerTeam.Count >= 6)
+        var inst = FindObjectOfType<T>();
+        if (inst == null)
         {
-            Debug.Log("El equipo está lleno. No se puede capturar más Pokémon.");
-            return;
+            var go = new GameObject(goName);
+            inst = go.AddComponent<T>();
         }
+        return inst;
+    }
 
-        playerTeam.Add(wildInstance);
-        Debug.Log($"Añadido {wildInstance.baseData.pokemonName} al equipo. Total: {playerTeam.Count}");
-
-        // Actualizar UI de equipo
-        if (teamUIManager != null)
-        {
-            teamUIManager.currentTeam = playerTeam;
-            teamUIManager.RefreshUI();
-        }
-        else
-        {
-            Debug.LogWarning("No se encontró el PokemonTeamUIManager.");
-        }
-
-        // Actualizar selector de objetos (Pokéballs y Pokémon)
-        if (FindObjectOfType<ItemSelectorUI>() is ItemSelectorUI selector)
-        {
-            selector.UpdateUI();
-        }
-
-        // ——— GUARDAR equipo tras captura ———
-        SaveSystem.SaveTeam(playerTeam);
+    private void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.F5))
+            SaveManager.Instance?.ManualSave();
     }
 }

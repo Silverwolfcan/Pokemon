@@ -8,49 +8,44 @@ public enum PokemonType
 
 public enum GrowthRateGroup
 {
-    Fast,
-    MediumFast,
-    MediumSlow,
-    Slow,
-    Fluctuating,
-    Erratic
+    Fast, MediumFast, MediumSlow, Slow, Fluctuating, Erratic
 }
-
 
 public enum Gender
 {
-    Male,
-    Female,
-    Unknown // Añadido para representar Pokémon sin género (como muchos legendarios)
+    Male, Female, Unknown // Unknown = sin género
 }
-
 
 public enum PokemonBehaviorType
 {
-    Friendly,
-    Aggressive,
-    Idle
+    Friendly, Aggressive, Idle
 }
-
 
 [System.Serializable]
 public class LearnableAttackEntry
 {
-    public AttackData attackData;
+    public MoveData attackData;
     public int level;
+}
+
+public enum GenderRule
+{
+    Ratio,        // usa maleRatio 0..1
+    AlwaysMale,
+    AlwaysFemale,
+    Genderless    // = Unknown
 }
 
 [CreateAssetMenu(menuName = "Pokémon/Pokemon Complete Data")]
 public class PokemonData : ScriptableObject
 {
     [Header("Identidad")]
-    public string pokemonName;            // Nombre interno del Pokémon
-    public string displayName;            // Nombre que se muestra al jugador
-    [TextArea(2, 5)]
-    public string description;
-    public int nationalDexNumber;         // Número en la Pokédex
-    public Sprite pokemonSprite;          // Sprite para la UI
-    public GameObject prefab;             // Prefab 3D del Pokémon
+    public string pokemonName;
+    public string displayName;
+    [TextArea(2, 5)] public string description;
+    public int nationalDexNumber;
+    public Sprite pokemonSprite;
+    public GameObject prefab;
 
     [Header("Tipos")]
     public PokemonType primaryType;
@@ -72,20 +67,13 @@ public class PokemonData : ScriptableObject
     public int baseExperienceYield;
     public GrowthRateGroup growthRate;
 
-    [Header("Sexo")]
-    public Gender genderType = Gender.Male;
-
-    // Solo se usa si genderType es Male o Female
-    [Range(0f, 1f)]
-    public float maleRatio = 0.5f;
+    [Header("Sexo (reglas de especie)")]
+    public GenderRule genderRule = GenderRule.Ratio;
+    [Range(0f, 1f)] public float maleRatio = 0.5f; // solo aplica si genderRule == Ratio
 
     [Header("Habilidades")]
     public AbilityData[] possibleAbilities;
 
     [Header("Listado de Ataques Aprendibles por Nivel")]
     public LearnableAttackEntry[] learnableAttacks;
-
-
-
-
 }

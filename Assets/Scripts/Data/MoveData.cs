@@ -4,9 +4,9 @@ public enum AttackType { Physical, Special, Status }
 public enum ElementType { Normal, Fire, Water, Grass, Electric, Ice, Fighting, Poison, Ground, Flying, Psychic, Bug, Rock, Ghost, Dragon, Dark, Steel, Fairy }
 
 [CreateAssetMenu(fileName = "New Move", menuName = "Pokemon/Moves")]
-public class AttackData : ScriptableObject
+public class MoveData : ScriptableObject
 {
-    public string attackName;
+    public string moveName;
     [TextArea] public string description;
     public ElementType type;
     public AttackType attackCategory;

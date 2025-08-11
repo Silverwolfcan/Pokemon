@@ -559,8 +559,7 @@ GameObject:
   - component: {fileID: 4434299999036237610}
   - component: {fileID: 7755006656229160420}
   - component: {fileID: 4345071254311879516}
-  - component: {fileID: 7231829513006329786}
-  - component: {fileID: 4030411152218147838}
+  - component: {fileID: 6863055398587124063}
   m_Layer: 5
   m_Name: Pokemon_Slot
   m_TagString: Untagged
@@ -676,7 +675,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls: []
---- !u!114 &7231829513006329786
+--- !u!114 &6863055398587124063
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -685,7 +684,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 5499471206466864950}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ceeb613eb731f5347bbf4d9b74bc522f, type: 3}
+  m_Script: {fileID: 11500000, guid: ba37dba5c35a1d945bc82266fce4147c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   txtName: {fileID: 8677723272501777141}
@@ -694,20 +693,10 @@ MonoBehaviour:
   txtHealth: {fileID: 1933909969984172920}
   txtLevel: {fileID: 7924474023265641542}
   imgSex: {fileID: 1986367020859805580}
-  maleIcon: {fileID: 21300000, guid: 957364008558eb3448acc9dab76a19f0, type: 3}
-  femaleIcon: {fileID: 21300000, guid: f6ee712f0b1cbaf44a9eb9570032a99d, type: 3}
---- !u!114 &4030411152218147838
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5499471206466864950}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ec2d01811da5d6b47ae2d4d52554acf3, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  maleSprite: {fileID: 21300000, guid: 957364008558eb3448acc9dab76a19f0, type: 3}
+  femaleSprite: {fileID: 21300000, guid: f6ee712f0b1cbaf44a9eb9570032a99d, type: 3}
+  unknownSprite: {fileID: 0}
+  emptyPlaceholder: {fileID: 0}
 --- !u!1 &5912507647938033780
 GameObject:
   m_ObjectHideFlags: 0

@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a9c93348484a2454388110c3e4066602, type: 3}
   m_Name: Synthesis
   m_EditorClassIdentifier: 
-  attackName: Sintesis
+  moveName: "S\xEDntesis"
   description: "El usuario recupera sus propios PV. La cantidad de PV recuperados
     var\xEDa seg\xFAn el clima."
   type: 3

@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a9c93348484a2454388110c3e4066602, type: 3}
   m_Name: Growth
   m_EditorClassIdentifier: 
-  attackName: Desarrollo
+  moveName: Desarrollo
   description: "El cuerpo del usuario crece al mismo tiempo, aumentando las estad\xEDsticas
     de Ataque y Ataque Especial.\r"
   type: 0
