@@ -14,59 +14,52 @@ public class PlayerCreatureBehavior : MonoBehaviour
 
     public PokemonInstance PokemonInstance { get; private set; }
 
+    private CombatContact contactHook;
+
+    // --- NUEVO ---
+    private bool isInCombat = false;
+    public bool IsInCombat => isInCombat;
+
     private void Awake()
     {
-        // ——— ASIGNAR LA CAPA “PokemonPlayer” al gameObject y propagarlo a cada objeto hijo ———
         int playerLayer = LayerMask.NameToLayer("PokemonPlayer");
         gameObject.layer = playerLayer;
-        foreach (Transform child in transform)
-        {
-            child.gameObject.layer = playerLayer;
-        }
+        foreach (Transform child in transform) child.gameObject.layer = playerLayer;
 
-        // ——— FIJAR CollisionDetectionMode A CONTINUOUS ———
-        // Para evitar que los raycasts "atraviesen" el Rigidbody
         var rigs = GetComponentsInChildren<Rigidbody>();
-        foreach (var rb in rigs)
-        {
-            rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
-        }
+        foreach (var rb in rigs) rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
 
-        // Si no tiene NavMeshAgent, lo añadimos aquí
         if (!TryGetComponent<NavMeshAgent>(out agent))
-        {
             agent = gameObject.AddComponent<NavMeshAgent>();
-        }
 
-        // Configuración por defecto
         agent.speed = 3.5f;
         agent.angularSpeed = 120f;
         agent.acceleration = 8f;
-        agent.stoppingDistance = stoppingDistance;  // usa la misma que tu variable
+        agent.stoppingDistance = stoppingDistance;
         agent.autoBraking = true;
+
+        contactHook = GetComponent<CombatContact>() ?? gameObject.AddComponent<CombatContact>();
+
+        if (PokemonInstance != null) contactHook.Bind(transform, PokemonInstance, wild: false);
     }
 
     private void Update()
     {
+        // --- BLOQUEO en combate ---
+        if (isInCombat) return;
+
         switch (currentState)
         {
-            case CreatureState.FollowingPlayer:
-                FollowPlayer();
-                break;
-            case CreatureState.MovingToTarget:
-                CheckArrival();
-                CheckIfTooFarFromPlayer();
-                break;
+            case CreatureState.FollowingPlayer: FollowPlayer(); break;
+            case CreatureState.MovingToTarget: CheckArrival(); CheckIfTooFarFromPlayer(); break;
         }
     }
 
     void FollowPlayer()
     {
         float dist = Vector3.Distance(transform.position, playerTransform.position);
-        if (dist > followDistance)
-            agent.SetDestination(playerTransform.position);
-        else
-            agent.ResetPath();
+        if (dist > followDistance) agent.SetDestination(playerTransform.position);
+        else agent.ResetPath();
     }
 
     void CheckArrival()
@@ -78,15 +71,12 @@ public class PlayerCreatureBehavior : MonoBehaviour
     void CheckIfTooFarFromPlayer()
     {
         float dist = Vector3.Distance(transform.position, playerTransform.position);
-        if (dist > maxDistanceFromPlayer)
-        {
-            //Debug.Log("La criatura está demasiado lejos del jugador. Volviendo a seguir.");
-            currentState = CreatureState.FollowingPlayer;
-        }
+        if (dist > maxDistanceFromPlayer) currentState = CreatureState.FollowingPlayer;
     }
 
     public void MoveToPoint(Vector3 point)
     {
+        if (isInCombat) return; // no aceptar órdenes en combate
         agent.SetDestination(point);
         currentState = CreatureState.MovingToTarget;
     }
@@ -94,11 +84,32 @@ public class PlayerCreatureBehavior : MonoBehaviour
     public void AssignPokemonInstance(PokemonInstance instance)
     {
         PokemonInstance = instance;
+        if (contactHook == null) contactHook = GetComponent<CombatContact>() ?? gameObject.AddComponent<CombatContact>();
+        contactHook.Bind(transform, PokemonInstance, wild: false);
     }
 
-    public enum CreatureState
+    // --- NUEVO: Pausar/Reanudar modo combate ---
+    public void SetCombatMode(bool active)
     {
-        FollowingPlayer,
-        MovingToTarget
+        isInCombat = active;
+
+        if (agent != null)
+        {
+            if (active)
+            {
+                agent.ResetPath();
+                // Deshabilitamos el NavMeshAgent para que no intente recolocar la posición
+                if (agent.enabled) agent.enabled = false;
+            }
+            else
+            {
+                // Rehabilitamos y sincronizamos
+                if (!agent.enabled) agent.enabled = true;
+                agent.Warp(transform.position);
+                currentState = CreatureState.FollowingPlayer;
+            }
+        }
     }
+
+    public enum CreatureState { FollowingPlayer, MovingToTarget }
 }

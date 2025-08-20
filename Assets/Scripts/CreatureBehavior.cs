@@ -16,6 +16,12 @@ public class CreatureBehavior : MonoBehaviour
 
     public PokemonInstance pokemonInstance { get; private set; }
 
+    private CombatContact contactHook;
+
+    // --- NUEVO ---
+    private bool isInCombat = false;
+    public bool IsInCombat => isInCombat;
+
     void Start()
     {
         if (player == null)
@@ -24,11 +30,14 @@ public class CreatureBehavior : MonoBehaviour
             if (playerObj != null) player = playerObj.transform;
         }
         spawnPoint = transform.position;
+        contactHook = GetComponent<CombatContact>();
         StartCoroutine(BehaviorLoop());
     }
 
     void Update()
     {
+        if (isInCombat) return; // --- BLOQUEO en combate ---
+
         if (!isMoving && pokemonInstance?.species != null && player != null &&
             pokemonInstance.species.behaviorType == PokemonBehaviorType.Friendly)
         {
@@ -41,6 +50,8 @@ public class CreatureBehavior : MonoBehaviour
     {
         while (true)
         {
+            if (isInCombat) { yield return null; continue; } // --- BLOQUEO en combate ---
+
             if (pokemonInstance?.species == null ||
                 pokemonInstance.species.behaviorType == PokemonBehaviorType.Idle)
             { yield return null; continue; }
@@ -72,6 +83,7 @@ public class CreatureBehavior : MonoBehaviour
 
     void SetDestination(Vector3 target)
     {
+        if (isInCombat) return; // no moverse en combate
         if (currentAction != null) StopCoroutine(currentAction);
         currentAction = StartCoroutine(MoveTo(target));
     }
@@ -79,7 +91,7 @@ public class CreatureBehavior : MonoBehaviour
     IEnumerator MoveTo(Vector3 target)
     {
         isMoving = true;
-        while (Vector3.Distance(transform.position, target) > 0.1f)
+        while (!isInCombat && Vector3.Distance(transform.position, target) > 0.1f)
         {
             Vector3 direction = (target - transform.position).normalized;
             transform.position += direction * moveSpeed * Time.deltaTime;
@@ -112,7 +124,14 @@ public class CreatureBehavior : MonoBehaviour
         return 0f;
     }
 
-    public void SetPokemon(PokemonInstance instance) { pokemonInstance = instance; }
+    public void SetPokemon(PokemonInstance instance)
+    {
+        pokemonInstance = instance;
+
+        if (contactHook == null) contactHook = GetComponent<CombatContact>() ?? gameObject.AddComponent<CombatContact>();
+        contactHook.Bind(transform, pokemonInstance, wild: true);
+    }
+
     public void InitializeFromInstance(PokemonInstance instance)
     {
         pokemonInstance = instance;
@@ -122,7 +141,29 @@ public class CreatureBehavior : MonoBehaviour
             if (playerObj != null) player = playerObj.transform;
         }
         spawnPoint = transform.position;
+
+        if (contactHook == null) contactHook = GetComponent<CombatContact>() ?? gameObject.AddComponent<CombatContact>();
+        contactHook.Bind(transform, pokemonInstance, wild: true);
+
         StartCoroutine(BehaviorLoop());
     }
+
     public PokemonInstance GetPokemonInstance() => pokemonInstance;
+
+    // --- NUEVO: Pausar/Reanudar modo combate ---
+    public void SetCombatMode(bool active)
+    {
+        isInCombat = active;
+
+        if (active)
+        {
+            // parar cualquier movimiento en curso
+            if (currentAction != null) { StopCoroutine(currentAction); currentAction = null; }
+            isMoving = false;
+        }
+        else
+        {
+            // al salir, simplemente retoma el bucle normal
+        }
+    }
 }

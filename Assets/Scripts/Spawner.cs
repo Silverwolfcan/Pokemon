@@ -42,7 +42,6 @@ public class Spawner : MonoBehaviour
         int level = Random.Range(nivelMin, nivelMax + 1);
         bool isShiny = Random.value < shinyProbability;
 
-        // Crea la instancia (género se resuelve dentro por reglas de especie)
         PokemonInstance instance = new PokemonInstance(selectedPokemon, level, Gender.Unknown, isShiny);
 
         creatureBehavior.SetPokemon(instance);
@@ -50,6 +49,11 @@ public class Spawner : MonoBehaviour
 
         GameObject playerObject = GameObject.FindGameObjectWithTag("Player");
         if (playerObject != null) creatureBehavior.player = playerObject.transform;
+
+        // ---- NUEVO: Asegurar y bindear CombatContact (salvaje) ----
+        var hook = creatureInstance.GetComponent<CombatContact>();
+        if (hook == null) hook = creatureInstance.AddComponent<CombatContact>();
+        hook.Bind(creatureInstance.transform, instance, wild: true);
 
         AdjustCreatureToGround(creatureInstance.transform);
     }
