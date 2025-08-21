@@ -18,6 +18,16 @@ public class Ball : MonoBehaviour
 
     public void Initialize(Vector3 start, Vector3 end, float maxHeight, float maxCurveStrength, PokeballData data)
     {
+        // ✅ Evitar múltiples lanzamientos durante el mismo turno en combate
+        if (CombatService.Instance != null && CombatService.Instance.IsInEncounter)
+        {
+            if (!CombatService.Instance.BeginCaptureAttempt())
+            {
+                Destroy(gameObject); // ya hay un intento activo: ignorar esta bola
+                return;
+            }
+        }
+
         startPoint = start; endPoint = end; pokeballData = data;
 
         float distance = Vector3.Distance(start, end);
@@ -130,11 +140,23 @@ public class Ball : MonoBehaviour
             var inst = targetPokemon.GetPokemonInstance();
             Debug.Log("Se ha capturado a " + inst.species.pokemonName);
             PokemonStorageManager.Instance.CapturePokemon(inst);
-            Destroy(targetObject); Destroy(gameObject, 0.5f);
+
+            // Notificar fin de combate por captura
+            CombatService.Instance?.NotifyCaptureSuccess();
+
+            Destroy(targetObject);
+            Destroy(gameObject, 0.5f);
         }
         else
         {
-            targetObject.SetActive(true); targetPokemon.enabled = true; Destroy(gameObject);
+            // Fallo: el salvaje vuelve a verse y a su comportamiento
+            targetObject.SetActive(true);
+            targetPokemon.enabled = true;
+
+            // Notificar consumo de turno y fin del intento de captura
+            CombatService.Instance?.NotifyCaptureFailed();
+
+            Destroy(gameObject);
         }
     }
 

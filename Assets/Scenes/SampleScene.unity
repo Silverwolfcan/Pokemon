@@ -2596,7 +2596,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e1711a3843c99864d8d694a6e22f93d8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  panelRoot: {fileID: 559259456}
+  panelRoot: {fileID: 1879047032}
   btnAttack: {fileID: 1193631732}
   btnCapture: {fileID: 2017059729}
   btnSwitch: {fileID: 221015938}
@@ -4320,7 +4320,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &934913630
 RectTransform:
   m_ObjectHideFlags: 0
@@ -6044,21 +6044,20 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   panelBalls: {fileID: 934913629}
-  imgActiveBall: {fileID: 1889785302}
-  txtNameBalls: {fileID: 1040010081}
-  txtNumberBalls: {fileID: 113049180}
   imgPreviousBall: {fileID: 1900024542}
+  imgActiveBall: {fileID: 1889785302}
   imgNextBall: {fileID: 1669105785}
+  txtNameBalls: {fileID: 1040010081}
+  txtCountBalls: {fileID: 113049180}
   panelPokemon: {fileID: 498637729}
+  imgPreviousPokemon: {fileID: 599275111}
   imgActivePokemon: {fileID: 2144436514}
+  imgNextPokemon: {fileID: 437790888}
   txtNamePokemon: {fileID: 2103785186}
   txtLevelPokemon: {fileID: 618119174}
-  imgPreviousPokemon: {fileID: 599275111}
-  imgNextPokemon: {fileID: 437790888}
   colorDisponible: {r: 1, g: 1, b: 1, a: 1}
   colorAgotado: {r: 0.5, g: 0.5, b: 0.5, a: 1}
-  currentMode: 0
-  playerController: {fileID: 1392447158}
+  toggleKey: 113
 --- !u!1 &1361327347
 GameObject:
   m_ObjectHideFlags: 0
@@ -6462,12 +6461,10 @@ MonoBehaviour:
   mouseSensitivity: 2
   minY: -40
   maxY: 80
-  normalFOV: 60
-  zoomFOV: 40
+  cam: {fileID: 0}
+  zoomFov: 35
   zoomSpeed: 10
-  crosshair: {fileID: 1781802895}
   maxThrowDistance: 20
-  actionCooldown: 0.2
   pokeballPrefab: {fileID: 6567941904137992301, guid: 1a85a864673855646be95d16e22c4b79, type: 3}
   throwOrigin: {fileID: 1642620454}
   throwCooldown: 2
@@ -7113,6 +7110,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   encounterPrefab: {fileID: 9126107073081557876, guid: 983728c37d0f33145995053f91e9ef3c, type: 3}
+  combatUIRoot: {fileID: 559259456}
+  defaultOffsetFromCenter: 4
+  defaultPlayerRingRadius: 10
 --- !u!4 &1491945621
 Transform:
   m_ObjectHideFlags: 0

@@ -128,6 +128,9 @@ public class CreatureBehavior : MonoBehaviour
     {
         pokemonInstance = instance;
 
+        // ✅ Garantiza que tenga movimientos para su nivel (si viene “vacío”)
+        pokemonInstance?.EnsureMovesForCurrentLevel();
+
         if (contactHook == null) contactHook = GetComponent<CombatContact>() ?? gameObject.AddComponent<CombatContact>();
         contactHook.Bind(transform, pokemonInstance, wild: true);
     }
@@ -135,6 +138,10 @@ public class CreatureBehavior : MonoBehaviour
     public void InitializeFromInstance(PokemonInstance instance)
     {
         pokemonInstance = instance;
+
+        // ✅ Garantiza movimientos si vienen vacíos
+        pokemonInstance?.EnsureMovesForCurrentLevel();
+
         if (player == null)
         {
             GameObject playerObj = GameObject.FindGameObjectWithTag("Player");

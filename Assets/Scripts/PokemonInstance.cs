@@ -207,15 +207,12 @@ public class PokemonInstance : ISerializationCallbackReceiver
         return true;
     }
 
-    // === NUEVO: compacta movimientos (no-nulos al principio, nulls al final) ===
-    // === NUEVO: compacta movimientos (no-nulos al principio, nulls al final).
-    //     Considera "vacío" también cualquier MoveInstance con data == null y lo normaliza a null.
+    // === Compacta movimientos (no-nulos al principio, nulls al final). Normaliza MoveInstance sin data => null.
     public bool CompactMoves()
     {
         bool changed = false;
         if (moves == null) moves = new List<MoveInstance>(4);
 
-        // normaliza: cualquier MoveInstance sin data => null
         for (int i = 0; i < moves.Count; i++)
         {
             if (moves[i] != null && moves[i].data == null)
@@ -225,11 +222,9 @@ public class PokemonInstance : ISerializationCallbackReceiver
             }
         }
 
-        // asegurar tamaño 4
         while (moves.Count < 4) { moves.Add(null); changed = true; }
         if (moves.Count > 4) { moves.RemoveRange(4, moves.Count - 4); changed = true; }
 
-        // compactar: mover no-nulos (con data) al principio
         var compact = new List<MoveInstance>(4);
         for (int i = 0; i < 4; i++)
             if (moves[i] != null && moves[i].data != null)
@@ -244,6 +239,38 @@ public class PokemonInstance : ISerializationCallbackReceiver
         return changed;
     }
 
+    // === NUEVO: helpers para garantizar movimientos aprendidos hasta el nivel actual ===
+    public bool HasAnyMoveData()
+    {
+        if (moves == null || moves.Count == 0) return false;
+        for (int i = 0; i < moves.Count; i++)
+            if (moves[i] != null && moves[i].data != null) return true;
+        return false;
+    }
+
+    /// Garantiza que, si no hay movimientos, se pueblen desde el learnset hasta el nivel actual.
+    /// Devuelve true si añadió alguno.
+    public bool EnsureMovesForCurrentLevel()
+    {
+        if (HasAnyMoveData()) return false;
+        int added = PopulateMovesFromLearnsetUpToLevel(level);
+        CompactMoves();
+        return added > 0;
+    }
+
+    /// Pone movimientos desde el learnset hasta el nivel indicado. Devuelve cuántos añadió.
+    public int PopulateMovesFromLearnsetUpToLevel(int upToLevel)
+    {
+        int added = 0;
+        if (species == null || species.learnableAttacks == null) return 0;
+        foreach (var entry in species.learnableAttacks)
+        {
+            if (entry == null || entry.attackData == null) continue;
+            if (entry.level <= upToLevel)
+                if (LearnMove(entry.attackData)) added++;
+        }
+        return added;
+    }
 
     public PokemonInstance DeepCopy(bool newID = false)
     {
@@ -349,6 +376,17 @@ public class PokemonInstance : ISerializationCallbackReceiver
         while (moves.Count < 4) moves.Add(null);
         CompactMoves();
         evs.ClampTotals();
-        if (species != null) { RecalculateStats(); currentHP = Mathf.Clamp(currentHP, 0, stats.MaxHP); }
+        if (species != null)
+        {
+            RecalculateStats();
+            currentHP = Mathf.Clamp(currentHP, 0, stats.MaxHP);
+
+            // <<< Garantiza movimientos si el objeto vino “vacío” del serializador
+            if (!HasAnyMoveData())
+            {
+                PopulateMovesFromLearnsetUpToLevel(level);
+                CompactMoves();
+            }
+        }
     }
 }

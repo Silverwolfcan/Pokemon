@@ -5,6 +5,7 @@ using TMPro;
 public class CombatUIController : MonoBehaviour
 {
     [Header("Root")]
+    [Tooltip("Panel raíz del menú principal (NO pongas aquí el Canvas).")]
     public GameObject panelRoot;
     public Button btnAttack, btnCapture, btnSwitch, btnItems, btnRun;
 
@@ -14,90 +15,177 @@ public class CombatUIController : MonoBehaviour
     public TMP_Text[] moveLabels = new TMP_Text[4];
 
     private TurnController turn;
+    private PlayerController playerController;
+    private bool captureMode = false;
 
-    void OnEnable()
+    private void OnEnable()
     {
-        // Intento de engancharme al TurnController del encuentro activo
-        InvokeRepeating(nameof(TryBind), 0f, 0.25f);
-
-        // Root
-        btnAttack.onClick.AddListener(() => ShowMoves(true));
-        btnCapture.onClick.AddListener(() => { turn?.QueueCapture(); HideAll(); });
-        btnSwitch.onClick.AddListener(() => { /* abre tu UI de party y al elegir: turn.QueueSwitch(p); */ });
-        btnItems.onClick.AddListener(() => { /* abre inventario de batalla */ });
-        btnRun.onClick.AddListener(() => { /* opcional confirmar */ turn?.QueueRun(); HideAll(); });
-
-        // Moves handlers
-        for (int i = 0; i < moveButtons.Length; i++)
-        {
-            int idx = i;
-            moveButtons[i].onClick.AddListener(() =>
-            {
-                turn?.QueueMove(idx);
-                HideAll();
-            });
-        }
-
         HideAll();
+        captureMode = false;
+        playerController = FindAnyObjectByType<PlayerController>();
+        InvokeRepeating(nameof(TryBind), 0.05f, 0.25f);
     }
 
-    void OnDisable()
+    private void OnDisable()
     {
         if (turn != null)
         {
             turn.OnPlayerTurnStart -= OnPlayerTurnStart;
             turn.OnEnemyTurnStart -= OnEnemyTurnStart;
+            turn = null;
         }
         CancelInvoke(nameof(TryBind));
+        captureMode = false;
     }
 
-    void TryBind()
+    private void Update()
+    {
+        // ESC cancela modo captura y vuelve al menú (bloquea movimiento y libera cursor)
+        if (captureMode && Input.GetKeyDown(KeyCode.Escape))
+        {
+            captureMode = false;
+            playerController?.EnableControls(false);
+            ShowMainMenu();
+            SetCursorForUI();
+        }
+    }
+
+    private void TryBind()
     {
         if (turn != null) return;
-        turn = FindAnyObjectByType<TurnController>();
-        if (turn == null) return;
 
-        // Suscribirse a los turnos
+        var t = FindAnyObjectByType<TurnController>();
+        if (t == null) return;
+
+        turn = t;
         turn.OnPlayerTurnStart += OnPlayerTurnStart;
         turn.OnEnemyTurnStart += OnEnemyTurnStart;
 
-        // Al terminar el combate, ocúltate
-        CombatEvents.OnEncounterEnded += _ => { HideAll(); };
-    }
-
-    void OnPlayerTurnStart()
-    {
-        // Rellenar nombres/PP de movimientos
-        var p = FindAnyObjectByType<EncounterController>(); // sólo para localizar el contexto
-        // Mejor: expón un getter en EncounterController si quieres.
-        var cbt = FindAnyObjectByType<CombatantController>(); // el primero suele ser el del jugador
-
-        // Si prefieres, puedes acceder a la instancia a través de tu manager
-        var inst = cbt?.IsPlayer == true ? cbt.Model : null;
-
-        for (int i = 0; i < 4; i++)
+        // Botones principales
+        btnAttack.onClick.RemoveAllListeners();
+        btnAttack.onClick.AddListener(() =>
         {
-            var has = inst != null && inst.Moves != null && i < inst.Moves.Count && inst.Moves[i] != null && inst.Moves[i].data != null;
-            moveButtons[i].interactable = has;
-            if (moveLabels != null && i < moveLabels.Length)
-                moveLabels[i].text = has ? $"{inst.Moves[i].data.moveName} {inst.Moves[i].currentPP}/{inst.Moves[i].maxPP}" : "--";
+            ShowMoves(true);
+            SetCursorForUI();
+        });
+
+        btnCapture.onClick.RemoveAllListeners();
+        btnCapture.onClick.AddListener(() =>
+        {
+            // Entrar en “modo captura”: habilitar controles y ocultar UI
+            captureMode = true;
+            playerController?.EnableControls(true);
+            HideAll();
+            SetCursorForGameplay();
+        });
+
+        btnRun.onClick.RemoveAllListeners();
+        btnRun.onClick.AddListener(() =>
+        {
+            turn.QueueRun();
+            HideAll();
+            SetCursorForGameplay();
+        });
+
+        btnSwitch.onClick.RemoveAllListeners();
+        btnSwitch.onClick.AddListener(() =>
+        {
+            // Aquí abrirías tu panel de equipo si procede
+        });
+
+        btnItems.onClick.RemoveAllListeners();
+        btnItems.onClick.AddListener(() =>
+        {
+            // Aquí abrirías inventario si procede
+        });
+
+        // Botones de movimientos
+        for (int i = 0; i < moveButtons.Length; i++)
+        {
+            int idx = i;
+            moveButtons[i].onClick.RemoveAllListeners();
+            moveButtons[i].onClick.AddListener(() =>
+            {
+                turn.QueueMove(idx);
+                HideAll();
+                SetCursorForGameplay();
+            });
         }
-
-        panelRoot.SetActive(true);
-        panelMoves.SetActive(false);
     }
 
-    void OnEnemyTurnStart() { HideAll(); }
-
-    void ShowMoves(bool v)
+    private void OnPlayerTurnStart()
     {
-        panelMoves.SetActive(v);
-        panelRoot.SetActive(!v);
+        // Turno del jugador: bloquear movimiento y mostrar menú con cursor libre
+        captureMode = false;
+        playerController?.EnableControls(false);
+
+        PopulateMovesIfPossible();
+        ShowMainMenu();
+        SetCursorForUI();
     }
 
-    void HideAll()
+    private void OnEnemyTurnStart()
     {
-        panelRoot.SetActive(false);
-        panelMoves.SetActive(false);
+        // Turno enemigo: sin menú ni movimiento; cursor bloqueado
+        captureMode = false;
+        playerController?.EnableControls(false);
+        HideAll();
+        SetCursorForGameplay();
+    }
+
+    public void ShowMainMenu()
+    {
+        if (panelRoot != null) panelRoot.SetActive(true);
+        if (panelMoves != null) panelMoves.SetActive(false);
+    }
+
+    public void HideAll()
+    {
+        if (panelRoot != null) panelRoot.SetActive(false);
+        if (panelMoves != null) panelMoves.SetActive(false);
+    }
+
+    private void ShowMoves(bool v)
+    {
+        if (panelMoves != null) panelMoves.SetActive(v);
+        if (panelRoot != null) panelRoot.SetActive(!v);
+    }
+
+    private void PopulateMovesIfPossible()
+    {
+        var all = FindObjectsOfType<CombatantController>();
+        CombatantController player = null;
+        foreach (var c in all)
+        {
+            if (c.IsPlayer) { player = c; break; }
+        }
+        if (player == null || player.Model == null) return;
+
+        var moves = player.Model.Moves;
+        for (int i = 0; i < moveLabels.Length; i++)
+        {
+            if (i < moves.Count && moves[i] != null && moves[i].data != null)
+            {
+                moveLabels[i].text = moves[i].data.moveName;
+                moveButtons[i].interactable = moves[i].currentPP > 0;
+            }
+            else
+            {
+                moveLabels[i].text = "-";
+                moveButtons[i].interactable = false;
+            }
+        }
+    }
+
+    private static void SetCursorForUI()
+    {
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+
+    private static void SetCursorForGameplay()
+    {
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
     }
 }

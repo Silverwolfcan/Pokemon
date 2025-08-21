@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.UI;
 using System.Linq;
 
 public class PlayerController : MonoBehaviour
@@ -14,16 +13,12 @@ public class PlayerController : MonoBehaviour
     public float maxY = 80f;
 
     [Header("Zoom y apuntado")]
-    public float normalFOV = 60f;
-    public float zoomFOV = 30f;
+    public Camera cam;
+    public float zoomFov = 35f;
     public float zoomSpeed = 10f;
-    public Image crosshair;
 
-    [Header("Acción (click izquierdo mientras apuntas)")]
-    [Range(1, 50)] public float maxThrowDistance = 15f;
-    public float actionCooldown = 0.2f; private float lastActionTime = -Mathf.Infinity;
-
-    [Header("Pokéball")]
+    [Header("Lanzamiento")]
+    public float maxThrowDistance = 15f;
     public GameObject pokeballPrefab;
     public Transform throwOrigin;
     public float throwCooldown = 2f; private float lastThrowTime = -Mathf.Infinity;
@@ -38,69 +33,102 @@ public class PlayerController : MonoBehaviour
     private PlayerCreatureBehavior activeSummonedPokemon;
     private string activePokemonID;
 
-    private CharacterController controller;
-    private Camera cam;
-    private float pitch;
+    private CharacterController character;
+    private float rotX, rotY;
     private bool controlsEnabled = true;
 
-    public void EnableControls(bool enabled) { controlsEnabled = enabled; }
-
-    void Start()
+    void Awake()
     {
-        controller = GetComponent<CharacterController>();
-        cam = cameraTransform.GetComponent<Camera>();
-        Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false; cam.fieldOfView = normalFOV;
-        if (crosshair != null) crosshair.enabled = false;
+        character = GetComponent<CharacterController>();
+        if (!cam) cam = Camera.main;
     }
 
     void Update()
     {
-        bool isAiming = controlsEnabled && Input.GetMouseButton(1);
-        HandleZoom(isAiming);
         if (!controlsEnabled) return;
 
-        HandleCameraRotation();
-        MovePlayer();
+        HandleMovement();
 
-        if (Input.GetKeyDown(KeyCode.Q)) ToggleSelectorMode();
+        if (Input.GetMouseButtonDown(0))
+        {
+            if (itemSelector != null && itemSelector.CurrentMode == SelectorMode.Pokeball)
+            {
+                TryThrowPokeball();
+            }
+            else
+            {
+                if (activeSummonedPokemon == null) SummonPokemon();
+                else HandleSummonedPokemonAction();
+            }
+        }
 
-        if (isAiming && Input.GetMouseButtonDown(0) && Time.time - lastActionTime >= actionCooldown)
-        { lastActionTime = Time.time; ExecuteAction(); }
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            ToggleSelectorMode();
+        }
     }
 
-    void ExecuteAction()
+    private void HandleMovement()
     {
-        if (itemSelector.CurrentMode == SelectorMode.Pokeball) TryThrowPokeball();
-        else if (itemSelector.CurrentMode == SelectorMode.Pokemon)
-        {
-            if (activeSummonedPokemon == null) SummonPokemon();
-            else HandleSummonedPokemonAction();
-        }
+        float h = Input.GetAxis("Horizontal");
+        float v = Input.GetAxis("Vertical");
+
+        Vector3 move = (transform.right * h + transform.forward * v) * moveSpeed;
+        if (character) character.SimpleMove(move);
+
+        rotX += Input.GetAxis("Mouse X") * mouseSensitivity;
+        rotY -= Input.GetAxis("Mouse Y") * mouseSensitivity;
+        rotY = Mathf.Clamp(rotY, minY, maxY);
+
+        transform.rotation = Quaternion.Euler(0, rotX, 0);
+        if (cameraTransform) cameraTransform.localRotation = Quaternion.Euler(rotY, 0, 0);
     }
 
     void TryThrowPokeball()
     {
         if (Time.time - lastThrowTime < throwCooldown) return;
+
+        // 1) Validar selección y disponibilidad
+        var entry = itemSelector != null ? itemSelector.GetSelectedBallEntry() : null;
+        if (entry == null || entry.item == null)
+        {
+            Debug.LogWarning("[PlayerController] No hay ninguna Pokéball seleccionada.");
+            return;
+        }
+        if (entry.quantity <= 0)
+        {
+            // La UI ya la grisea y muestra x0
+            Debug.Log("[PlayerController] No te quedan unidades de: " + entry.item.name);
+            return;
+        }
+
+        // 2) Consumir 1 unidad (actualiza la UI)
+        if (!itemSelector.TryConsumeSelectedBall())
+        {
+            Debug.Log("[PlayerController] No se pudo consumir Pokéball.");
+            return;
+        }
+
         lastThrowTime = Time.time;
 
-        var item = itemSelector.GetCurrentEntry().item;
-        int qty = InventoryManager.Instance.GetQuantity(item);
-        if (qty <= 0 || !InventoryManager.Instance.UseItem(item)) return;
+        // 3) Lanzar físicamente la ball
+        Vector3 origin = throwOrigin ? throwOrigin.position : cam.transform.position;
+        Vector3 dir = cam.transform.forward;
 
-        Vector3 rayOrigin = cam.transform.position; Vector3 dir = cam.transform.forward;
-        Vector3 target = rayOrigin + dir * maxThrowDistance;
-        if (Physics.Raycast(rayOrigin, dir, out RaycastHit hit, maxThrowDistance)) target = hit.point;
+        Vector3 end = origin + dir * maxThrowDistance;
+        if (Physics.Raycast(origin, dir, out RaycastHit hit, maxThrowDistance, movementMask))
+            end = hit.point;
 
-        var pokeballGO = Instantiate(pokeballPrefab, throwOrigin.position, Quaternion.identity);
-        if (pokeballGO.TryGetComponent<Ball>(out var ball))
-            ball.Initialize(throwOrigin.position, target, 2f, 1f, (PokeballData)item);
-
-        itemSelector.UpdateUI();
+        var ballData = entry.item as PokeballData; // ya validado arriba
+        var ball = Instantiate(pokeballPrefab, origin, Quaternion.identity).GetComponent<Ball>();
+        ball.Initialize(origin, end, 4f, 1.5f, ballData);
     }
 
     void SummonPokemon()
     {
-        var pi = itemSelector.GetCurrentPokemon(); if (pi == null) return;
+        var pi = itemSelector != null ? itemSelector.GetCurrentPokemon() : null;
+        if (pi == null) return;
+        if (pi.currentHP <= 0) { Debug.Log("[PlayerController] No puedes invocar un Pokémon debilitado."); return; }
 
         Vector3 origin = cam.transform.position; Vector3 dir = cam.transform.forward;
         Vector3 spawnPoint = origin + dir * maxThrowDistance;
@@ -113,52 +141,31 @@ public class PlayerController : MonoBehaviour
         activeSummonedPokemon = pcb;
         activePokemonID = pi.UniqueID;
 
-        itemSelector.RefreshCapturedPokemon();
+        itemSelector?.RefreshCapturedPokemon();
     }
 
     void HandleSummonedPokemonAction()
     {
-        Ray ray = cam.ScreenPointToRay(new Vector3(Screen.width / 2, Screen.height / 2)); RaycastHit hit;
-
-        if (Physics.Raycast(ray, out hit, maxThrowDistance, pokemonPlayerMask))
+        Ray ray = cam.ScreenPointToRay(new Vector3(Screen.width / 2, Screen.height / 2));
+        if (Physics.Raycast(ray, out RaycastHit hit, maxThrowDistance, pokemonPlayerMask))
         {
             Destroy(activeSummonedPokemon.gameObject);
-            activeSummonedPokemon = null; activePokemonID = null;
-            itemSelector.RefreshCapturedPokemon(); return;
+            activeSummonedPokemon = null;
+            activePokemonID = null;
+            itemSelector?.RefreshCapturedPokemon();
+            return;
         }
-
-        if (Physics.Raycast(ray, out hit, maxThrowDistance, movementMask))
-            activeSummonedPokemon.MoveToPoint(hit.point);
-    }
-
-    void MovePlayer()
-    {
-        Vector3 inV = new Vector3(Input.GetAxis("Horizontal"), 0, Input.GetAxis("Vertical"));
-        Vector3 dir = (cameraTransform.forward * inV.z + cameraTransform.right * inV.x).normalized; dir.y = 0;
-        controller.Move(dir * moveSpeed * Time.deltaTime);
-    }
-
-    void HandleCameraRotation()
-    {
-        float mx = Input.GetAxis("Mouse X") * mouseSensitivity;
-        float my = Input.GetAxis("Mouse Y") * mouseSensitivity;
-        pitch = Mathf.Clamp(pitch - my, minY, maxY);
-        cameraTransform.localEulerAngles = new Vector3(pitch, 0, 0);
-        transform.Rotate(Vector3.up * mx);
-    }
-
-    void HandleZoom(bool isAiming)
-    {
-        float targetFOV = isAiming ? zoomFOV : normalFOV;
-        cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, targetFOV, Time.deltaTime * zoomSpeed);
-        if (crosshair != null) crosshair.enabled = isAiming;
+        // Aquí irían órdenes al Pokémon activo en el mundo si las implementas.
     }
 
     void ToggleSelectorMode()
     {
+        if (itemSelector == null) return;
         var newMode = itemSelector.CurrentMode == SelectorMode.Pokeball ? SelectorMode.Pokemon : SelectorMode.Pokeball;
         itemSelector.SetMode(newMode);
     }
+
+    public void EnableControls(bool enabled) => controlsEnabled = enabled;
 
     public PokemonInstance GetActivePokemon()
     {

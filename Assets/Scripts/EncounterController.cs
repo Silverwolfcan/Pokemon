@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using UnityEngine;
 
@@ -6,191 +6,256 @@ public class EncounterController : MonoBehaviour
 {
     public enum State { Idle, Positioning, PlayerTurn, EnemyTurn, Resolving, Ended }
 
-    [Header("Ring / l�mites")]
+    [Header("Ring / límites")]
     [SerializeField] private float ringRadiusForPlayer = 10f;
-    [SerializeField] private float combatantOffsetFromCenter = 1f;
+
+    [Tooltip("Distancia desde el centro a cada Pokémon. 2.5 => separación total ~5 m.")]
+    [SerializeField] private float combatantOffsetFromCenter = 2.5f;
+
+    [Header("Movimiento de posicionamiento")]
     [SerializeField] private float repositionSpeed = 12f;
     [SerializeField] private float snapTolerance = 0.05f;
 
     [Header("Turnos")]
-    [SerializeField] private float turnIntroDelay = 0.35f;
+    [SerializeField] private float turnIntroDelay = 0.15f;
 
-    private Transform playerMonTf, wildMonTf;
-    private CombatantController playerCbt, enemyCbt;
-    private TurnController turnCtl;
-    private CombatBoundary boundary;
+    [Header("Refs (opcional en prefab)")]
+    [SerializeField] private TurnController turnController;
+    [SerializeField] private CombatBoundary boundary;
 
-    private Action onEndCallback;
+    [Header("HUD")]
+    [Tooltip("Prefab con Canvas (World Space) + CombatantHUD. Se instancian 2: jugador y salvaje.")]
+    [SerializeField] private GameObject combatantHudPrefab;
+
     private State state = State.Idle;
-    private Vector3 ringCenter;
     private bool ended = false;
 
-    public void Begin(Transform playerMonTf, PokemonInstance playerMon,
-                      Transform wildMonTf, PokemonInstance wildMon,
-                      Action onEnd)
+    private CombatantController playerCbt;
+    private CombatantController enemyCbt;
+
+    private Transform playerMonTf;
+    private Transform wildMonTf;
+
+    private PokemonInstance playerModel;
+    private PokemonInstance wildModel;
+
+    private PlayerController playerController;
+
+    private Vector3 ringCenter;
+    private Vector3 targetPlayerPos, targetEnemyPos;
+
+    private Action onEndCallback;
+
+    // HUD instanciados
+    private GameObject playerHudGO;
+    private GameObject enemyHudGO;
+
+    public TurnController TurnController => turnController;
+
+    public void ApplyConfig(float offsetFromCenter, float playerRingRadius)
     {
-        this.playerMonTf = playerMonTf;
-        this.wildMonTf = wildMonTf;
+        combatantOffsetFromCenter = offsetFromCenter;
+        ringRadiusForPlayer = playerRingRadius;
+    }
+
+    public void Begin(Transform playerTf, PokemonInstance player,
+                      Transform wildTf, PokemonInstance wild,
+                      Action onEnd = null)
+    {
+        if (state != State.Idle) { Debug.LogWarning("[Encounter] Begin() ignorado (no Idle)."); return; }
+
         onEndCallback = onEnd;
 
-        boundary = gameObject.AddComponent<CombatBoundary>();
-        boundary.Setup(() => GetPlayerPosition(), (pos) => SetPlayerPosition(pos), () => ringCenter, ringRadiusForPlayer);
+        playerMonTf = playerTf;
+        wildMonTf = wildTf;
+        playerModel = player;
+        wildModel = wild;
 
-        playerCbt = new GameObject("PlayerCombatant").AddComponent<CombatantController>();
-        playerCbt.transform.SetParent(transform);
-        playerCbt.Init(playerMonTf, playerMon, isPlayer: true);
+        // Bloquea control/cámara como en tus menús
+        playerController = FindAnyObjectByType<PlayerController>();
+        playerController?.EnableControls(false);
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
 
-        enemyCbt = new GameObject("EnemyCombatant").AddComponent<CombatantController>();
-        enemyCbt.transform.SetParent(transform);
-        enemyCbt.Init(wildMonTf, wildMon, isPlayer: false);
+        // Combatants (operan sobre el Transform real)
+        playerCbt = gameObject.AddComponent<CombatantController>();
+        playerCbt.Init(playerMonTf, playerModel, true);
 
-        turnCtl = new GameObject("TurnController").AddComponent<TurnController>();
-        turnCtl.transform.SetParent(transform);
-        turnCtl.Setup(playerCbt, enemyCbt);
+        enemyCbt = gameObject.AddComponent<CombatantController>();
+        enemyCbt.Init(wildMonTf, wildModel, false);
 
-        ToggleCombatOn(playerMonTf, true);
-        ToggleCombatOn(wildMonTf, true);
+        // Pausar comportamientos de mundo
+        ToggleCombatMode(playerMonTf, true);
+        ToggleCombatMode(wildMonTf, true);
 
-        ComputeAndPlaceRing();
+        // Centro y destinos
+        ringCenter = ComputeMidpointXZ(playerMonTf.position, wildMonTf.position);
+        ComputeTargets();
+
+        // Boundary del jugador
+        if (!boundary) boundary = gameObject.AddComponent<CombatBoundary>();
+        boundary.Setup(
+            getPlayerPos: () => playerCbt.Position,
+            setPlayerPos: p => playerCbt.Position = p,
+            getCenter: () => ringCenter,
+            radius: ringRadiusForPlayer
+        );
+
+        // TurnController con callback de fin (Huir, KOs, etc.)
+        if (!turnController) turnController = gameObject.AddComponent<TurnController>();
+        turnController.Setup(playerCbt, enemyCbt, (result) => EndEncounter(result));
+
+        // ====== HUDs ======
+        SpawnHUDs();
+
+        // Loop
         StartCoroutine(CoRun());
     }
 
-    public void ForceEnd()
-    {
-        if (ended) return;
-        EndEncounter(EncounterResult.ForcedEnd);
-    }
+    public void ForceEnd() => EndEncounter(EncounterResult.ForcedEnd);
+
+    // Punto de entrada oficial para cierre por CAPTURA (lo llamará CombatService.NotifyCaptureSuccess)
+    public void EndByCapture() => EndEncounter(EncounterResult.Capture);
 
     private IEnumerator CoRun()
     {
         state = State.Positioning;
-
         yield return StartCoroutine(CoPositionCombatants());
 
         while (!ended)
         {
-            if (playerCbt.IsFainted) { EndEncounter(EncounterResult.PlayerFainted); break; }
-            if (enemyCbt.IsFainted) { EndEncounter(EncounterResult.EnemyFainted); break; }
+            if (playerCbt.IsFainted) { EndEncounter(EncounterResult.PlayerFainted); yield break; }
+            if (enemyCbt.IsFainted) { EndEncounter(EncounterResult.EnemyFainted); yield break; }
 
             state = State.PlayerTurn;
             yield return new WaitForSeconds(turnIntroDelay);
-            yield return StartCoroutine(turnCtl.DoPlayerTurn(ringCenter, combatantOffsetFromCenter));
-            if (CheckEndMidTurn()) break;
+            yield return StartCoroutine(turnController.DoPlayerTurn(ringCenter, combatantOffsetFromCenter));
+            if (ended) yield break;
+
+            if (playerCbt.IsFainted) { EndEncounter(EncounterResult.PlayerFainted); yield break; }
+            if (enemyCbt.IsFainted) { EndEncounter(EncounterResult.EnemyFainted); yield break; }
 
             state = State.EnemyTurn;
             yield return new WaitForSeconds(turnIntroDelay);
-            yield return StartCoroutine(turnCtl.DoEnemyTurn(ringCenter, combatantOffsetFromCenter));
-            if (CheckEndMidTurn()) break;
+            yield return StartCoroutine(turnController.DoEnemyTurn(ringCenter, combatantOffsetFromCenter));
         }
-    }
-
-    private void Update()
-    {
-        if (!ended && playerCbt != null && enemyCbt != null)
-            KeepCombatantsOnRing();
-    }
-
-    private bool CheckEndMidTurn()
-    {
-        if (playerCbt.IsFainted) { EndEncounter(EncounterResult.PlayerFainted); return true; }
-        if (enemyCbt.IsFainted) { EndEncounter(EncounterResult.EnemyFainted); return true; }
-        return false;
-    }
-
-    private void ComputeAndPlaceRing()
-    {
-        var dir = (GetPlayerPosition() - wildMonTf.position);
-        dir.y = 0f;
-        if (dir.sqrMagnitude < 0.001f) dir = Vector3.forward;
-        dir.Normalize();
-
-        ringCenter = wildMonTf.position + dir * 1f;
-
-        var pPos = ringCenter - dir * combatantOffsetFromCenter;
-        var ePos = ringCenter + dir * combatantOffsetFromCenter;
-
-        playerCbt.TeleportTo(pPos, lookAt: ringCenter);
-        enemyCbt.TeleportTo(ePos, lookAt: ringCenter);
     }
 
     private IEnumerator CoPositionCombatants()
     {
-        float t = 0f;
-        while (t < 0.2f)
+        ComputeTargets();
+
+        playerCbt.Face(wildMonTf.position);
+        enemyCbt.Face(playerMonTf.position);
+
+        while (true)
         {
-            KeepCombatantsOnRing();
-            t += Time.deltaTime;
+            float step = repositionSpeed * Time.deltaTime;
+
+            playerCbt.MoveTowardsPosition(targetPlayerPos, step);
+            enemyCbt.MoveTowardsPosition(targetEnemyPos, step);
+
+            bool pDone = new Vector2(playerCbt.Position.x, playerCbt.Position.z).Equals2D(targetPlayerPos, snapTolerance);
+            bool eDone = new Vector2(enemyCbt.Position.x, enemyCbt.Position.z).Equals2D(targetEnemyPos, snapTolerance);
+
+            if (pDone && eDone) break;
             yield return null;
         }
+
+        playerCbt.Position = targetPlayerPos;
+        enemyCbt.Position = targetEnemyPos;
     }
 
-    private void KeepCombatantsOnRing()
+    private void ComputeTargets()
     {
-        KeepOnRing(playerCbt);
-        KeepOnRing(enemyCbt);
+        Vector3 pj = playerMonTf.position;
+        Vector3 en = wildMonTf.position;
+
+        Vector3 dir = en - pj;
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
+        dir.Normalize();
+
+        ringCenter = ComputeMidpointXZ(pj, en);
+
+        targetPlayerPos = ringCenter - dir * combatantOffsetFromCenter;
+        targetPlayerPos.y = pj.y;
+
+        targetEnemyPos = ringCenter + dir * combatantOffsetFromCenter;
+        targetEnemyPos.y = en.y;
     }
 
-    private void KeepOnRing(CombatantController cbt)
+    private static Vector3 ComputeMidpointXZ(Vector3 a, Vector3 b)
     {
-        var current = cbt.Position;
-        var fromCenter = current - ringCenter; fromCenter.y = 0f;
-
-        // Si est� justo en el centro (raro), empuja hacia delante del rival
-        if (fromCenter.sqrMagnitude < 0.0001f)
-            fromCenter = (current - ringCenter + Vector3.forward * 0.01f);
-
-        var desired = ringCenter + fromCenter.normalized * combatantOffsetFromCenter;
-        desired.y = current.y;
-
-        var dist = Vector3.Distance(current, desired);
-        if (dist > snapTolerance)
-        {
-            var step = repositionSpeed * Time.deltaTime;
-            cbt.MoveTowardsPosition(desired, step);
-            cbt.Face(ringCenter);
-        }
+        return new Vector3((a.x + b.x) * 0.5f, Mathf.Min(a.y, b.y), (a.z + b.z) * 0.5f);
     }
 
     private void EndEncounter(EncounterResult result)
     {
+        if (ended) return;
         ended = true;
         state = State.Ended;
 
-        playerCbt.CleanupAfterBattle();
-        enemyCbt.CleanupAfterBattle();
+        // Limpieza de combatientes
+        playerCbt?.CleanupAfterBattle();
+        enemyCbt?.CleanupAfterBattle();
 
-        ToggleCombatOn(playerMonTf, false);
-        ToggleCombatOn(wildMonTf, false);
+        // Reanudar rutinas de mundo (jugador y salvaje)
+        ToggleCombatMode(playerMonTf, false);
+        ToggleCombatMode(wildMonTf, false);
 
+        // Restaurar control normal y cursor de gameplay
+        playerController?.EnableControls(true);
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+
+        // Destruir HUDs
+        if (playerHudGO) Destroy(playerHudGO);
+        if (enemyHudGO) Destroy(enemyHudGO);
+
+        // Notificar al caller (CombatService cierra UI y limpia)
         onEndCallback?.Invoke();
+
         Destroy(gameObject);
     }
 
-    // ---------- Helpers ----------
-    private Vector3 GetPlayerPosition()
+    private static void ToggleCombatMode(Transform t, bool v)
     {
-        var pc = FindAnyObjectByType<PlayerController>();
-        return pc ? pc.transform.position : Vector3.zero;
-    }
-    private void SetPlayerPosition(Vector3 p)
-    {
-        var pc = FindAnyObjectByType<PlayerController>();
-        if (pc) pc.transform.position = p;
+        if (!t) return;
+        var pcb = t.GetComponent<PlayerCreatureBehavior>();
+        if (pcb) { pcb.SetCombatMode(v); return; }
+        var cb = t.GetComponent<CreatureBehavior>();
+        if (cb) cb.SetCombatMode(v);
     }
 
-    private static void ToggleCombatOn(Transform tf, bool active)
+    private void SpawnHUDs()
     {
-        if (!tf) return;
+        if (!combatantHudPrefab)
+        {
+            Debug.LogWarning("[Encounter] No se asignó 'combatantHudPrefab'. No se mostrarán HUDs.");
+            return;
+        }
 
-        var pcb = tf.GetComponent<PlayerCreatureBehavior>() ?? tf.GetComponentInParent<PlayerCreatureBehavior>(true);
-        if (pcb != null) pcb.SetCombatMode(active);
+        Camera cam = Camera.main;
 
-        var wild = tf.GetComponent<CreatureBehavior>() ?? tf.GetComponentInParent<CreatureBehavior>(true);
-        if (wild != null) wild.SetCombatMode(active);
+        playerHudGO = Instantiate(combatantHudPrefab);
+        var hudP = playerHudGO.GetComponent<CombatantHUD>();
+        if (hudP) hudP.Bind(playerMonTf, playerModel, cam);
+
+        enemyHudGO = Instantiate(combatantHudPrefab);
+        var hudE = enemyHudGO.GetComponent<CombatantHUD>();
+        if (hudE) hudE.Bind(wildMonTf, wildModel, cam);
     }
 }
 
-public enum EncounterResult
+public enum EncounterResult { PlayerFainted, EnemyFainted, Capture, Run, ForcedEnd }
+
+internal static class Vec2Ext
 {
-    PlayerFainted, EnemyFainted, Capture, Run, ForcedEnd
+    public static bool Equals2D(this Vector2 a, Vector3 b, float tol)
+    {
+        float dx = a.x - b.x;
+        float dz = a.y - b.z;
+        return (dx * dx + dz * dz) <= tol * tol;
+    }
 }

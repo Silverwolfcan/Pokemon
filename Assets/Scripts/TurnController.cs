@@ -1,59 +1,86 @@
+ï»¿using System;
 using System.Collections;
 using UnityEngine;
-using System;
 
 public class TurnController : MonoBehaviour
 {
     private CombatantController player, enemy;
 
-    public event Action OnPlayerTurnStart; // engancha aquí tu UI para abrir menú
+    // Eventos para la UI
+    public event Action OnPlayerTurnStart;
     public event Action OnEnemyTurnStart;
 
-    // Para que la UI devuelva la acción elegida:
+    // Cola decisiÃ³n jugador
     private int? queuedPlayerMoveIndex = null;
     private bool queuedRun = false;
     private bool queuedCapture = false;
     private PokemonInstance queuedSwitchIn = null;
 
-    public void Setup(CombatantController player, CombatantController enemy)
+    // Completar turno externamente (fallo de captura, etc.)
+    private bool externalTurnComplete = false;
+
+    // Callback de fin de combate (inyectado por EncounterController)
+    private Action<EncounterResult> onEndEncounter;
+
+    // --------- Setup ---------
+    public void Setup(CombatantController playerCombatant, CombatantController enemyCombatant)
     {
-        this.player = player;
-        this.enemy = enemy;
+        Setup(playerCombatant, enemyCombatant, null);
     }
 
-    // ---------- Player ----------
-    public IEnumerator DoPlayerTurn(Vector3 ringCenter, float offset)
+    public void Setup(CombatantController playerCombatant, CombatantController enemyCombatant, Action<EncounterResult> onEnd)
+    {
+        player = playerCombatant;
+        enemy = enemyCombatant;
+        onEndEncounter = onEnd;
+        ClearQueued();
+    }
+
+    // --------- API para UI ---------
+    public void QueueMove(int moveIndex) { queuedPlayerMoveIndex = moveIndex; }
+    public void QueueRun() { queuedRun = true; }
+    public void QueueCapture() { queuedCapture = true; }
+    public void QueueSwitch(PokemonInstance switchIn) { queuedSwitchIn = switchIn; }
+    public void ConsumePlayerTurn() { externalTurnComplete = true; }
+
+    // --------- Bucle de turnos ---------
+    public IEnumerator DoPlayerTurn(Vector3 ringCenter, float offsetFromCenter)
     {
         OnPlayerTurnStart?.Invoke();
 
-        // Esperar decisión (UI debe llamar a una de estas: QueueMove, QueueRun, QueueCapture, QueueSwitch)
-        yield return new WaitUntil(() =>
-            queuedPlayerMoveIndex.HasValue || queuedRun || queuedCapture || queuedSwitchIn != null);
+        // Espera a que la UI encole una acciÃ³n o a que se complete externamente (p.ej. fallo de captura)
+        while (!queuedPlayerMoveIndex.HasValue && !queuedRun && !queuedCapture && queuedSwitchIn == null && !externalTurnComplete)
+            yield return null;
+
+        if (externalTurnComplete)
+        {
+            Debug.Log("[TurnController] Turno del jugador consumido externamente (p.ej., fallo de captura).");
+            ClearQueued();
+            yield break; // pasa a turno enemigo
+        }
 
         if (queuedRun)
         {
-            // TODO: confirmar huida si procede (probabilidad si quieres), por ahora siempre exitosa
-            CombatEvents.RaiseEncounterEnded(EncounterResult.Run);
+            Debug.Log("[TurnController] El jugador eligiÃ³ Huir.");
             ClearQueued();
+            onEndEncounter?.Invoke(EncounterResult.Run);
             yield break;
         }
 
         if (queuedCapture)
         {
-            // TODO: lanzar pokéball: aquí puedes pausar, esperar resultado y terminar combate si capturas
-            // Por ahora solo consume turno sin efecto
-            yield return new WaitForSeconds(0.3f);
+            // Compatibilidad si alguien siguiera usando este flujo: consumimos turno
+            Debug.Log("[TurnController] El jugador eligiÃ³ Capturar (flujo legacy): se consume turno.");
             ClearQueued();
+            yield return new WaitForSeconds(0.2f);
             yield break;
         }
 
         if (queuedSwitchIn != null)
         {
-            // TODO: animación de cambio. Debes intercambiar el “activo” de la party con queuedSwitchIn
-            // Por ahora solo consume turno
-            yield return new WaitForSeconds(0.3f);
-            queuedSwitchIn = null;
+            Debug.Log("[TurnController] (MVP) Cambio de PokÃ©mon aÃºn no implementado: se consume turno.");
             ClearQueued();
+            yield return new WaitForSeconds(0.2f);
             yield break;
         }
 
@@ -64,59 +91,142 @@ public class TurnController : MonoBehaviour
         yield return ExecuteMove(player, enemy, moveIndex);
     }
 
-    // ---------- Enemy ----------
-    public IEnumerator DoEnemyTurn(Vector3 ringCenter, float offset)
+    public IEnumerator DoEnemyTurn(Vector3 ringCenter, float offsetFromCenter)
     {
         OnEnemyTurnStart?.Invoke();
 
-        // IA simple: elige primer movimiento válido con PP
-        int enemyMove = WildAI.ChooseMoveIndex(enemy.Model);
-        yield return ExecuteMove(enemy, player, enemyMove);
+        // IA: primer movimiento preferido
+        int preferred = WildAI.ChooseMoveIndex(enemy?.Model);
+
+        // ValidaciÃ³n robusta
+        int safeIdx = FindUsableMoveIndex(enemy?.Model, preferredIndex: preferred);
+        if (safeIdx < 0)
+        {
+            Debug.LogWarning("[TurnController] El enemigo no tiene movimientos usables. Pasa turno.");
+            yield return new WaitForSeconds(0.25f);
+            yield break;
+        }
+
+        yield return ExecuteMove(enemy, player, safeIdx);
     }
 
-    // ---------- Exec ----------
+    // --------- EjecuciÃ³n de movimientos ---------
     private IEnumerator ExecuteMove(CombatantController attacker, CombatantController defender, int moveIndex)
     {
-        var mv = attacker.Model != null && attacker.Model.Moves.Count > moveIndex
+        if (attacker == null || defender == null || attacker.Model == null)
+        {
+            Debug.LogWarning("[TurnController] ExecuteMove sin attacker/defender/model vÃ¡lido.");
+            yield return new WaitForSeconds(0.1f);
+            yield break;
+        }
+
+        // Datos del movimiento
+        var mv = (attacker.Model.Moves != null && moveIndex >= 0 && moveIndex < attacker.Model.Moves.Count)
                ? attacker.Model.Moves[moveIndex]
                : null;
 
+        string who = AttackerLabel(attacker);
+        string target = AttackerLabel(defender);
+        string moveName = (mv != null && mv.data != null && !string.IsNullOrEmpty(mv.data.moveName)) ? mv.data.moveName : "(vacÃ­o)";
+
         if (mv == null || mv.data == null)
         {
-            // Falla/espera si movimiento vacío
+            Debug.LogWarning($"[TurnController] {who} intentÃ³ usar un slot vacÃ­o (Ã­ndice {moveIndex}). Se salta el turno.");
             yield return new WaitForSeconds(0.2f);
             yield break;
         }
 
-        if (!mv.TryConsumePP(1))
+        // PP check
+        if (mv.currentPP <= 0)
         {
-            // Sin PP: falla
+            Debug.Log($"[TurnController] {who} intentÃ³ usar {moveName} pero no tiene PP.");
             yield return new WaitForSeconds(0.2f);
             yield break;
         }
 
-        // Accuracy
+        // Gastar PP
+        mv.currentPP = Mathf.Max(0, mv.currentPP - 1);
+
+        // PrecisiÃ³n
         if (!MoveExecutor.CheckAccuracy(attacker.Model, defender.Model, mv.data.accuracy))
         {
-            // Fallo
-            // TODO: animación de fallo
-            yield return new WaitForSeconds(0.35f);
+            Debug.Log($"[TurnController] {who} usÃ³ {moveName} â†’ FALLÃ“ (Acc: {mv.data.accuracy}).");
+            yield return new WaitForSeconds(0.25f);
             yield break;
         }
 
-        // Daño
-        int damage = MoveExecutor.ComputeDamage(attacker.Model, defender.Model, mv.data);
-        defender.ApplyDamage(damage);
+        // Solo daÃ±o directo para MVP (Status mÃ¡s adelante)
+        int dmgApplied = 0;
+        if (mv.data.attackCategory != AttackType.Status && mv.data.power > 0)
+        {
+            int dmg = MoveExecutor.ComputeDamage(attacker.Model, defender.Model, mv.data);
+            dmg = Mathf.Max(0, dmg);
 
-        // TODO: anim/FX. Pequeño knockback opcional…
-        yield return new WaitForSeconds(0.45f);
+            int before = defender.Model != null ? defender.Model.currentHP : 0;
+
+            // Preferir API del CombatantController si existe
+            bool usedControllerAPI = false;
+            try
+            {
+                defender.ApplyDamage(dmg);
+                usedControllerAPI = true;
+            }
+            catch (MissingMethodException)
+            {
+                // Fallback si el mÃ©todo no existiera en tu variante
+                if (defender.Model != null)
+                    defender.Model.currentHP = Mathf.Max(0, defender.Model.currentHP - dmg);
+            }
+
+            int after = defender.Model != null ? defender.Model.currentHP : 0;
+            dmgApplied = Mathf.Max(0, before - after);
+
+            Debug.Log($"[TurnController] {who} usÃ³ {moveName} â†’ DAÃ‘O {dmgApplied} (HP {target}: {before} â†’ {after})"
+                      + (usedControllerAPI ? "" : " [fallback HP directo]"));
+        }
+        else
+        {
+            Debug.Log($"[TurnController] {who} usÃ³ {moveName} (Status/Power=0). Sin daÃ±o aplicado en MVP.");
+        }
+
+        yield return new WaitForSeconds(0.25f);
     }
 
-    // ---------- UI Hooks ----------
-    public void QueueMove(int moveIndex) { queuedPlayerMoveIndex = moveIndex; }
-    public void QueueRun() { queuedRun = true; }
-    public void QueueCapture() { queuedCapture = true; }
-    public void QueueSwitch(PokemonInstance switchIn) { queuedSwitchIn = switchIn; }
+    // --------- Helpers ---------
+    private int FindUsableMoveIndex(PokemonInstance inst, int preferredIndex)
+    {
+        if (inst == null || inst.Moves == null || inst.Moves.Count == 0) return -1;
+
+        // Preferido vÃ¡lido
+        if (preferredIndex >= 0 && preferredIndex < inst.Moves.Count)
+        {
+            var m = inst.Moves[preferredIndex];
+            if (m != null && m.data != null && m.currentPP > 0) return preferredIndex;
+        }
+
+        // Buscar cualquiera usable
+        for (int i = 0; i < inst.Moves.Count; i++)
+        {
+            var m = inst.Moves[i];
+            if (m != null && m.data != null && m.currentPP > 0) return i;
+        }
+
+        return -1;
+    }
+
+    private static string SpeciesName(PokemonInstance pi)
+    {
+        if (pi == null || pi.species == null) return "?";
+        var n = pi.species.pokemonName;
+        return string.IsNullOrEmpty(n) ? "?" : n;
+    }
+
+    private static string AttackerLabel(CombatantController cbt)
+    {
+        if (cbt == null) return "?";
+        string species = SpeciesName(cbt.Model);
+        return cbt.IsPlayer ? $"Jugador ({species})" : $"Enemigo ({species})";
+    }
 
     private void ClearQueued()
     {
@@ -124,12 +234,6 @@ public class TurnController : MonoBehaviour
         queuedRun = false;
         queuedCapture = false;
         queuedSwitchIn = null;
+        externalTurnComplete = false;
     }
-}
-
-public static class CombatEvents
-{
-    public static Action<EncounterResult> OnEncounterEnded;
-
-    public static void RaiseEncounterEnded(EncounterResult r) => OnEncounterEnded?.Invoke(r);
 }
