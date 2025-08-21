@@ -1,106 +1,198 @@
 using System.Collections;
 using UnityEngine;
 
-/// Lógica de Pokéball con física real (Rigidbody + gravedad) desde el lanzamiento.
-/// - Calcula una velocidad inicial balística para alcanzar el punto de destino con una altura de arco.
-/// - Al impactar con un salvaje, congela la física y ejecuta la secuencia de captura (shakes).
-/// - Refresca ItemSelectorUI tras capturar y notifica a CombatService en éxito/fracaso.
+/// Pokéball:
+/// 1) Vuelo por Bezier (kinemática) con SphereCast de impacto.
+/// 2) Al terminar el arco o tocar suelo, activa física real (Rigidbody+gravedad).
+/// 3) Al impactar un salvaje, congela la física, posa sobre el suelo y ejecuta animación de sacudidas.
+/// 4) Refresca ItemSelectorUI y notifica a CombatService en éxito/fracaso.
+/// 5) Fuerza 1 intento de captura por turno en combate.
+/// 6) En fallo de captura, reanuda el comportamiento del salvaje y la bola desaparece inmediatamente.
 [RequireComponent(typeof(Rigidbody))]
 public class Ball : MonoBehaviour
 {
-    [Header("Datos")]
-    [SerializeField] private PokeballData pokeballData;
-
-    [Header("Parámetros de lanzamiento")]
-    [Tooltip("Multiplicador de tiempo de vuelo: >1 = arco más alto (más tiempo), <1 = más directo.")]
-    [SerializeField] private float flightTimeScale = 1.0f;
-    [Tooltip("Velocidad 'objetivo' para calcular el tiempo de vuelo si el apex no es válido.")]
-    [SerializeField] private float throwSpeedHint = 12f;
-    [Tooltip("Giro inicial para dar sensación de rotación en vuelo.")]
-    [SerializeField] private float spinMagnitude = 16f;
-
     [Header("Captura")]
-    [SerializeField] private LayerMask groundMask = -1;
-    [SerializeField] private float destroyDelayOnResult = 0.5f;
+    [SerializeField] private PokeballData pokeballData;
+    [Tooltip("Capa(s) de suelo para posado/colisión. Si no se asigna, se usará TODAS (~0).")]
+    [SerializeField] private LayerMask groundLayer;
+    [Tooltip("Altura a la que debe quedar la bola por encima del suelo al empezar la animación.")]
+    [SerializeField] private float groundRestOffset = 0.5f;
 
+    [Header("Vuelo (Bezier)")]
+    [Tooltip("Radio de detección mientras vuela (SphereCast).")]
+    [SerializeField] private float traceRadius = 0.12f;
+    [Tooltip("Altura base del arco cuando distance=10m (se escala por distancia).")]
+    [SerializeField] private float baseArcHeight = 2.0f;
+
+    private Vector3 startPoint, endPoint, controlPoint;
+    private float duration = 1f, timer = 0f;
+    private bool physicsActivated = false;
+    private bool hasHitPokemon = false;
+    private bool hasLanded = false;
+
+    // cache
+    private CreatureBehavior targetPokemon;
+    private GameObject targetObject;
     private Rigidbody rb;
-    private bool resolved;               // para no procesar capturas dos veces
-    private CreatureBehavior targetWild; // objetivo impactado
-    private GameObject targetGO;
+
+    // prob. crítica adicional al multiplicador de la ball (MVP)
+    private float criticalCaptureChance = 0.10f;
 
     // ---------------- API pública ----------------
-    /// <param name="start">Punto de lanzamiento</param>
-    /// <param name="end">Punto de destino estimado (se calculará la velocidad para llegar)</param>
-    /// <param name="arcHeight">Altura extra del apex respecto al punto más alto entre start y end</param>
-    /// <param name="curveStrength">No se usa en modo físico (compatibilidad de firma)</param>
-    public void Initialize(Vector3 start, Vector3 end, float arcHeight, float curveStrength, PokeballData data)
+    /// <param name="start">origen del lanzamiento</param>
+    /// <param name="end">punto objetivo aprox.</param>
+    /// <param name="maxHeight">altura extra solicitada (se mezcla con baseArcHeight)</param>
+    /// <param name="maxCurveStrength">desviación lateral del arco (m)</param>
+    public void Initialize(Vector3 start, Vector3 end, float maxHeight, float maxCurveStrength, PokeballData data)
     {
+        // Evitar múltiples lanzamientos durante el mismo turno en combate
+        if (CombatService.Instance != null && CombatService.Instance.IsInEncounter)
+        {
+            if (!CombatService.Instance.BeginCaptureAttempt())
+            {
+                Destroy(gameObject);
+                return;
+            }
+        }
+
+        startPoint = start;
+        endPoint = end;
         pokeballData = data;
 
         rb = GetComponent<Rigidbody>();
-        rb.isKinematic = false;
-        rb.useGravity = true;
+        rb.isKinematic = true;
+        rb.useGravity = false;
+        rb.linearVelocity = Vector3.zero;
+        rb.angularVelocity = Random.onUnitSphere * 20f;
 
-        // Por si no está configurada, intentar coger la capa Ground
-        if (groundMask.value == 0 || groundMask == -1)
-            groundMask = LayerMask.GetMask("Ground");
+        // Calcular controlPoint (altura + curva lateral hacia la DERECHA)
+        Vector3 dir = (endPoint - startPoint);
+        float dist = Mathf.Max(0.01f, dir.magnitude);
+        Vector3 mid = (startPoint + endPoint) * 0.5f;
 
-        // Colocar en el punto inicial y calcular velocidad balística
-        transform.position = start;
-        Vector3 v0 = ComputeBallisticVelocity(start, end, arcHeight, flightTimeScale, throwSpeedHint);
-        rb.linearVelocity = v0;
-        rb.angularVelocity = Random.onUnitSphere * spinMagnitude;
+        // Derecha: Cross(UP, dir)
+        Vector3 side = Vector3.Cross(Vector3.up, dir.normalized);
+        float arc = Mathf.Max(0.1f, baseArcHeight + maxHeight * 0.5f) * Mathf.Clamp(dist / 10f, 0.5f, 1.5f);
+        float lateral = Mathf.Clamp(maxCurveStrength, -5f, 5f);
 
-        // Orientación inicial opcional (hacia la velocidad)
-        if (v0.sqrMagnitude > 0.001f)
-            transform.rotation = Quaternion.LookRotation(new Vector3(v0.x, 0f, v0.z), Vector3.up);
+        controlPoint = mid + Vector3.up * arc + side * lateral;
 
-        // Seguridad por si queda suelta en la escena
-        Destroy(gameObject, 10f);
+        // Duración proporcional a la distancia → vuelo más natural
+        duration = Mathf.Clamp(dist / 10f, 0.6f, 1.4f);
+        timer = 0f;
+
+        // Seguridad por si queda suelta
+        Destroy(gameObject, 12f);
     }
 
-    // ---------------- Física / Colisiones ----------------
+    private void Update()
+    {
+        if (hasHitPokemon || hasLanded) return;
+
+        if (!physicsActivated)
+        {
+            float prevT = Mathf.Clamp01(timer / Mathf.Max(0.01f, duration));
+            timer += Time.deltaTime;
+            float t = Mathf.Clamp01(timer / Mathf.Max(0.01f, duration));
+
+            Vector3 prevPos = EvaluateBezier(startPoint, controlPoint, endPoint, prevT);
+            Vector3 newPos = EvaluateBezier(startPoint, controlPoint, endPoint, t);
+
+            // Trazado de colisión entre prevPos -> newPos
+            Vector3 delta = newPos - prevPos;
+            float len = delta.magnitude;
+            if (len > 0.0001f)
+            {
+                if (Physics.SphereCast(prevPos, traceRadius, delta.normalized, out RaycastHit hit, len, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    // Impacto con salvaje en fase Bezier
+                    if (hit.collider.TryGetComponent(out CreatureBehavior wild))
+                    {
+                        transform.position = hit.point;
+                        HandleHitWild(wild);
+                        return;
+                    }
+
+                    // Impacto con suelo/obstáculo → activar física y dejar rebotar
+                    if (IsOnGroundLayer(hit.collider.gameObject.layer))
+                    {
+                        transform.position = hit.point;
+                        ActivatePhysics(delta / Mathf.Max(Time.deltaTime, 0.001f));
+                        return;
+                    }
+                }
+            }
+
+            // Avanzar sin colisión
+            transform.position = newPos;
+
+            // Fin del arco → pasar a física con velocidad residual
+            if (t >= 0.999f)
+            {
+                Vector3 vel = (newPos - prevPos) / Mathf.Max(Time.deltaTime, 0.001f);
+                ActivatePhysics(vel);
+            }
+        }
+    }
+
+    private void ActivatePhysics(Vector3 initialVelocity)
+    {
+        physicsActivated = true;
+        rb.isKinematic = false;
+        rb.useGravity = true;
+        rb.linearVelocity = initialVelocity;
+    }
+
     private void OnCollisionEnter(Collision col)
     {
-        if (resolved) return;
+        if (hasHitPokemon) return;
 
-        // Impacto con salvaje: iniciar captura
         if (col.collider.TryGetComponent(out CreatureBehavior wild))
         {
-            targetWild = wild;
-            targetGO = wild.gameObject;
-
-            // Congelar física para la animación de shakes
-            rb.isKinematic = true;
-            rb.useGravity = false;
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
-
-            StartCoroutine(CoCaptureFlow());
+            HandleHitWild(wild);
             return;
         }
 
-        // Impacto con suelo: nada especial, dejar rebotar; se autodestruirá más tarde
-        // (Si quieres que se quede 'clavada' al tocar suelo, descomenta:)
-        // if (((1 << col.gameObject.layer) & groundMask) != 0) Destroy(gameObject, 2f);
+        // Toca suelo
+        if (IsOnGroundLayer(col.gameObject.layer))
+        {
+            hasLanded = true;
+            Destroy(gameObject, 3f);
+        }
     }
 
-    // ---------------- Captura ----------------
+    // ----------------- Captura -----------------
+    private void HandleHitWild(CreatureBehavior wild)
+    {
+        hasHitPokemon = true;
+        targetPokemon = wild;
+        targetObject = wild.gameObject;
+
+        // Congelar física para la animación de sacudidas
+        rb.isKinematic = true;
+        rb.useGravity = false;
+        rb.linearVelocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
+
+        StartCoroutine(CoCaptureFlow());
+    }
+
     private IEnumerator CoCaptureFlow()
     {
-        if (resolved) yield break;
-        resolved = true;
+        if (targetObject) targetObject.SetActive(false);
 
-        // Ocultar temporalmente al salvaje y colocar la bola a sus "pies"
-        if (targetGO) targetGO.SetActive(false);
+        // Posar la bola sobre el SUELO debajo del objetivo (raycast robusto)
+        Vector3 basePos;
+        if (!TryGetGroundUnder(targetPokemon.transform.position, out basePos))
+        {
+            // Fallback: usar el punto actual con offset
+            basePos = transform.position;
+            basePos.y += Mathf.Max(0.1f, groundRestOffset);
+        }
+        transform.position = basePos;
 
-        float footY = 0f;
-        var rend = targetGO ? targetGO.GetComponentInChildren<Renderer>() : null;
-        if (rend) footY = rend.bounds.extents.y * 0.5f; // un poco más abajo para que no flote
-        transform.position = targetWild.transform.position + Vector3.up * footY;
-
-        // Calcular probabilidad simple (MVP)
-        var inst = targetWild.GetPokemonInstance();
+        // Probabilidad básica (MVP)
+        var inst = targetPokemon.GetPokemonInstance();
         if (inst == null || inst.species == null)
         {
             Debug.LogError("[Ball] Instancia o especie nula en captura.");
@@ -110,11 +202,10 @@ public class Ball : MonoBehaviour
         float baseRate = Mathf.Clamp01(inst.species.catchRate);
         float mult = pokeballData ? Mathf.Max(0f, pokeballData.catchMultiplier) : 1f;
         float chance = Mathf.Clamp01(baseRate * mult);
-        bool success = Random.value <= chance;
+        bool success = (Random.value < criticalCaptureChance) || (Random.value <= chance);
 
-        // Sacudidas simples
+        // Sacudidas
         int shakes = success ? 3 : Random.Range(1, 3);
-        Vector3 basePos = transform.position;
         for (int i = 0; i < shakes; i++)
         {
             yield return Shake(basePos);
@@ -124,11 +215,10 @@ public class Ball : MonoBehaviour
 
         if (success)
         {
-            // Añadir al almacenamiento
             PokemonStorageManager.Instance?.CapturePokemon(inst);
 
-            // 🔄 Refrescar UI (balls + pokémon)
-            var selector = FindAnyObjectByType<ItemSelectorUI>();
+            // Refrescar UI
+            var selector = Object.FindAnyObjectByType<ItemSelectorUI>();
             if (selector != null)
             {
                 selector.RefreshCapturedPokemon();
@@ -136,22 +226,46 @@ public class Ball : MonoBehaviour
                 selector.gameObject.SendMessage("RefreshBalls", SendMessageOptions.DontRequireReceiver);
             }
 
-            // Notificar fin de encuentro si estamos en combate
+            // Cerrar combate si procede
             if (CombatService.Instance != null && CombatService.Instance.IsInEncounter)
                 CombatService.Instance.NotifyCaptureSuccess();
 
-            Destroy(targetGO); // eliminar salvaje del mundo
-            Destroy(gameObject, destroyDelayOnResult);
+            Destroy(targetObject);
+            Destroy(gameObject, 0.5f); // éxito: permite ver el cierre de animación
         }
         else
         {
-            // Fallo: devolver al salvaje a la escena y notificar al combate
-            if (targetGO) targetGO.SetActive(true);
+            // Fallo: reactivar salvaje y reanudar su comportamiento
+            if (targetObject)
+            {
+                targetObject.SetActive(true);
 
+                var beh = targetObject.GetComponent<CreatureBehavior>();
+                if (beh != null)
+                {
+                    if (CombatService.Instance != null && CombatService.Instance.IsInEncounter)
+                    {
+                        // Seguimos en combate: mantener desactivada la IA de mundo
+                        beh.SetCombatMode(true);
+                    }
+                    else
+                    {
+                        // Fuera de combate: retomar IA de mundo
+                        beh.SetCombatMode(false);
+
+                        // "Kick" del componente para reiniciar corutinas si se pararon al desactivar el GO
+                        beh.enabled = false;
+                        beh.enabled = true;
+                    }
+                }
+            }
+
+            // Notificar al combate para consumir turno si procede
             if (CombatService.Instance != null && CombatService.Instance.IsInEncounter)
                 CombatService.Instance.NotifyCaptureFailed();
 
-            Destroy(gameObject, destroyDelayOnResult);
+            // Bola desaparece INMEDIATAMENTE en fallo
+            Destroy(gameObject);
         }
     }
 
@@ -171,38 +285,51 @@ public class Ball : MonoBehaviour
     }
 
     // ---------------- Utilidades ----------------
-    /// Calcula una velocidad inicial para alcanzar 'end' con gravedad, usando un apex por encima del punto más alto
-    /// o, si no es viable, un cálculo por tiempo de vuelo aproximado (throwSpeedHint).
-    private static Vector3 ComputeBallisticVelocity(Vector3 start, Vector3 end, float arcHeight, float timeScale, float speedHint)
+    private static Vector3 EvaluateBezier(Vector3 p0, Vector3 p1, Vector3 p2, float t)
     {
-        float g = Mathf.Abs(Physics.gravity.y);
-        Vector3 disp = end - start;
-        Vector3 dispXZ = new Vector3(disp.x, 0f, disp.z);
-        float distXZ = dispXZ.magnitude;
+        t = Mathf.Clamp01(t);
+        float u = 1f - t;
+        return u * u * p0 + 2f * u * t * p1 + t * t * p2;
+    }
 
-        // Intento 1: método del apex
-        float apex = Mathf.Max(start.y, end.y) + Mathf.Max(0.1f, arcHeight);
-        float heightUp = Mathf.Max(0.01f, apex - start.y);
-        float heightDown = Mathf.Max(0.01f, apex - end.y);
+    private bool IsOnGroundLayer(int layer)
+    {
+        // Si no asignaste groundLayer en el inspector, admite TODO.
+        int mask = (groundLayer.value != 0) ? groundLayer.value : ~0;
+        return (mask & (1 << layer)) != 0;
+    }
 
-        float vy = Mathf.Sqrt(2f * g * heightUp);
-        float tUp = vy / g;
-        float tDown = Mathf.Sqrt(2f * heightDown / g);
-        float t = (tUp + tDown) * Mathf.Max(0.25f, timeScale);
+    /// Busca suelo bajo "center" con varios fallbacks.
+    /// Devuelve el punto de apoyo + offset vertical para posar la bola.
+    private bool TryGetGroundUnder(Vector3 center, out Vector3 result)
+    {
+        int mask = (groundLayer.value != 0) ? groundLayer.value : ~0;
 
-        if (t > 0.01f && distXZ > 0.001f)
+        // 1) Raycast largo desde arriba
+        Vector3 origin = center + Vector3.up * 50f;
+        if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 200f, mask, QueryTriggerInteraction.Ignore))
         {
-            Vector3 vxz = dispXZ / t;
-            return vxz + Vector3.up * vy;
+            result = hit.point + Vector3.up * Mathf.Max(0f, groundRestOffset);
+            return true;
         }
 
-        // Intento 2: cálculo por tiempo de vuelo con pista de velocidad
-        float travelTime = Mathf.Max(0.25f, distXZ / Mathf.Max(0.1f, speedHint)) * Mathf.Max(0.25f, timeScale);
-        Vector3 v = new Vector3(
-            disp.x / travelTime,
-            (disp.y + 0.5f * g * travelTime * travelTime) / travelTime,
-            disp.z / travelTime
-        );
-        return v;
+        // 2) SphereCast corto desde la posición actual de la bola
+        Vector3 start = transform.position + Vector3.up * 1f;
+        if (Physics.SphereCast(start, 0.2f, Vector3.down, out hit, 3f, mask, QueryTriggerInteraction.Ignore))
+        {
+            result = hit.point + Vector3.up * Mathf.Max(0f, groundRestOffset);
+            return true;
+        }
+
+        // 3) Raycast global sin máscara, por si la capa de suelo no coincide
+        if (Physics.Raycast(origin, Vector3.down, out hit, 200f, ~0, QueryTriggerInteraction.Ignore))
+        {
+            result = hit.point + Vector3.up * Mathf.Max(0f, groundRestOffset);
+            return true;
+        }
+
+        // 4) Fallback final: mantener altura actual
+        result = transform.position;
+        return false;
     }
 }

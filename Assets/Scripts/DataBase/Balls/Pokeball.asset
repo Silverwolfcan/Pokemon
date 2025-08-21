@@ -16,5 +16,5 @@ MonoBehaviour:
   icon: {fileID: -1997047358, guid: fec9c10a41208a8418e4acec025bf369, type: 3}
   category: 0
   description: 
-  catchMultiplier: 1
+  catchMultiplier: 0.1
   unlockedByDefault: 1

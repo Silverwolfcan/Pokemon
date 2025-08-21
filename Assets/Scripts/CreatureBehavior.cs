@@ -12,6 +12,7 @@ public class CreatureBehavior : MonoBehaviour
     [HideInInspector] public Vector3 spawnPoint;
 
     private Coroutine currentAction;
+    private Coroutine behaviorLoop; // ← controlamos el loop para reanudarlo tras reactivación
     private bool isMoving = false;
 
     public PokemonInstance pokemonInstance { get; private set; }
@@ -22,6 +23,27 @@ public class CreatureBehavior : MonoBehaviour
     private bool isInCombat = false;
     public bool IsInCombat => isInCombat;
 
+    void OnEnable()
+    {
+        // Al reactivar el GO (p.ej. tras captura fallida), Start NO se vuelve a llamar.
+        // Reaseguramos referencias mínimas y reanudamos el bucle de comportamiento.
+        if (player == null)
+        {
+            GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
+            if (playerObj != null) player = playerObj.transform;
+        }
+
+        EnsureBehaviorLoopRunning();
+    }
+
+    void OnDisable()
+    {
+        // Al desactivar el GO se paran las corutinas; limpiamos punteros para dejar estado consistente.
+        if (currentAction != null) { StopCoroutine(currentAction); currentAction = null; }
+        if (behaviorLoop != null) { StopCoroutine(behaviorLoop); behaviorLoop = null; }
+        isMoving = false;
+    }
+
     void Start()
     {
         if (player == null)
@@ -31,7 +53,7 @@ public class CreatureBehavior : MonoBehaviour
         }
         spawnPoint = transform.position;
         contactHook = GetComponent<CombatContact>();
-        StartCoroutine(BehaviorLoop());
+        EnsureBehaviorLoopRunning(); // ← en vez de StartCoroutine directo
     }
 
     void Update()
@@ -46,6 +68,12 @@ public class CreatureBehavior : MonoBehaviour
         }
     }
 
+    private void EnsureBehaviorLoopRunning()
+    {
+        if (behaviorLoop == null)
+            behaviorLoop = StartCoroutine(BehaviorLoop());
+    }
+
     IEnumerator BehaviorLoop()
     {
         while (true)
@@ -54,7 +82,10 @@ public class CreatureBehavior : MonoBehaviour
 
             if (pokemonInstance?.species == null ||
                 pokemonInstance.species.behaviorType == PokemonBehaviorType.Idle)
-            { yield return null; continue; }
+            {
+                yield return null;
+                continue;
+            }
 
             float waitTime = Random.Range(1f, wanderInterval);
 
@@ -65,14 +96,20 @@ public class CreatureBehavior : MonoBehaviour
                 waitTime += 2f;
             }
 
+            // Espera antes de decidir siguiente destino
             yield return new WaitForSeconds(waitTime);
 
             float distanceToPlayer = player ? Vector3.Distance(transform.position, player.position) : Mathf.Infinity;
             float distanceToSpawn = Vector3.Distance(transform.position, spawnPoint);
 
-            if (distanceToSpawn > wanderRadius) SetDestination(spawnPoint);
+            if (distanceToSpawn > wanderRadius)
+            {
+                SetDestination(spawnPoint);
+            }
             else if (pokemonInstance.species.behaviorType == PokemonBehaviorType.Aggressive && distanceToPlayer < detectionRadius)
+            {
                 SetDestination(player.position);
+            }
             else if (pokemonInstance.species.behaviorType == PokemonBehaviorType.Friendly)
             {
                 Vector3 randomOffset = Random.insideUnitSphere * wanderRadius; randomOffset.y = 0;
@@ -133,6 +170,9 @@ public class CreatureBehavior : MonoBehaviour
 
         if (contactHook == null) contactHook = GetComponent<CombatContact>() ?? gameObject.AddComponent<CombatContact>();
         contactHook.Bind(transform, pokemonInstance, wild: true);
+
+        // Por si el GO se creó/activó en runtime:
+        EnsureBehaviorLoopRunning();
     }
 
     public void InitializeFromInstance(PokemonInstance instance)
@@ -152,7 +192,7 @@ public class CreatureBehavior : MonoBehaviour
         if (contactHook == null) contactHook = GetComponent<CombatContact>() ?? gameObject.AddComponent<CombatContact>();
         contactHook.Bind(transform, pokemonInstance, wild: true);
 
-        StartCoroutine(BehaviorLoop());
+        EnsureBehaviorLoopRunning(); // ← evita duplicados y garantiza reanudación
     }
 
     public PokemonInstance GetPokemonInstance() => pokemonInstance;
@@ -170,7 +210,8 @@ public class CreatureBehavior : MonoBehaviour
         }
         else
         {
-            // al salir, simplemente retoma el bucle normal
+            // al salir de combate, aseguramos que el loop está corriendo
+            EnsureBehaviorLoopRunning();
         }
     }
 }

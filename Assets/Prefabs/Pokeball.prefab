@@ -270,3 +270,6 @@ MonoBehaviour:
   groundLayer:
     serializedVersion: 2
     m_Bits: 64
+  groundRestOffset: 0.1
+  traceRadius: 0.12
+  baseArcHeight: 2

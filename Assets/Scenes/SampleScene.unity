@@ -1372,6 +1372,154 @@ MonoBehaviour:
   btnNext: {fileID: 679608157}
   toggleKey: 114
   startWithPCClosed: 1
+--- !u!1 &308449093
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 308449098}
+  - component: {fileID: 308449097}
+  - component: {fileID: 308449096}
+  - component: {fileID: 308449095}
+  - component: {fileID: 308449094}
+  - component: {fileID: 308449099}
+  m_Layer: 0
+  m_Name: HealerStation
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &308449094
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 308449093}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 17c1d612fe0a1b24bb0596539f169f57, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  interactKey: 101
+  promptText: Pulsa E para curar el equipo
+  promptCanvas: {fileID: 0}
+  promptLabel: {fileID: 0}
+  restorePP: 1
+--- !u!65 &308449095
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 308449093}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 2, y: 2, z: 2}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!23 &308449096
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 308449093}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!33 &308449097
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 308449093}
+  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!4 &308449098
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 308449093}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -3, y: 0.5, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &308449099
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 308449093}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1 &330585543
 GameObject:
   m_ObjectHideFlags: 0
@@ -2608,11 +2756,25 @@ MonoBehaviour:
   - {fileID: 1041461911}
   - {fileID: 1681179343}
   - {fileID: 1687935757}
-  moveLabels:
+  moveNameLabels:
   - {fileID: 211242589}
   - {fileID: 2087970174}
   - {fileID: 1582111118}
   - {fileID: 1140636722}
+  movePPLabels:
+  - {fileID: 1873546969}
+  - {fileID: 1245975747}
+  - {fileID: 2021009296}
+  - {fileID: 1484225964}
+  moveTypeLabels:
+  - {fileID: 86302896}
+  - {fileID: 54987122}
+  - {fileID: 462390138}
+  - {fileID: 1440045009}
+  textColor: {r: 0, g: 0, b: 0, a: 1}
+  ppOkColor: {r: 0, g: 0, b: 0, a: 1}
+  ppZeroColor: {r: 1, g: 0.25, b: 0.25, a: 1}
+  typeColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &599275109
 GameObject:
   m_ObjectHideFlags: 0
@@ -6057,6 +6219,7 @@ MonoBehaviour:
   txtLevelPokemon: {fileID: 618119174}
   colorDisponible: {r: 1, g: 1, b: 1, a: 1}
   colorAgotado: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  colorDebilitado: {r: 1, g: 0.2, b: 0.2, a: 1}
   toggleKey: 113
 --- !u!1 &1361327347
 GameObject:
@@ -6461,9 +6624,10 @@ MonoBehaviour:
   mouseSensitivity: 2
   minY: -40
   maxY: 80
-  cam: {fileID: 0}
+  cam: {fileID: 330585545}
   zoomFov: 35
   zoomSpeed: 10
+  crosshair: {fileID: 1781802893}
   maxThrowDistance: 20
   pokeballPrefab: {fileID: 6567941904137992301, guid: 1a85a864673855646be95d16e22c4b79, type: 3}
   throwOrigin: {fileID: 1642620454}
@@ -7110,7 +7274,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   encounterPrefab: {fileID: 9126107073081557876, guid: 983728c37d0f33145995053f91e9ef3c, type: 3}
-  combatUIRoot: {fileID: 559259456}
   defaultOffsetFromCenter: 4
   defaultPlayerRingRadius: 10
 --- !u!4 &1491945621
@@ -10097,3 +10260,4 @@ SceneRoots:
   - {fileID: 523825139}
   - {fileID: 1491945621}
   - {fileID: 559259460}
+  - {fileID: 308449098}
