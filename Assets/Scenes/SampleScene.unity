@@ -4452,7 +4452,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: da6516e5ba1d1b347bb872516d55fa8a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  numberOfCreatures: 1
+  numberOfCreatures: 5
   pokemonSpawnList:
   - pokemon: {fileID: 11400000, guid: ea24de05bd003204c951857d19fae53c, type: 2}
     spawnChance: 1

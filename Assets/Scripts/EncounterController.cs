@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class EncounterController : MonoBehaviour
@@ -23,6 +24,14 @@ public class EncounterController : MonoBehaviour
     [Tooltip("Offset local si se usa fallback por SendMessage (cuando el prefab no tiene CombatantHUD).")]
     [SerializeField] private Vector3 hudOffset = new Vector3(0, 2.0f, 0);
 
+    [Header("Desalojo de salvajes dentro del ring")]
+    [Tooltip("Margen extra que deberán sobrepasar (ringRadius + clearance).")]
+    [SerializeField] private float evictionClearance = 1.5f;
+    [Tooltip("Velocidad con la que se empuja a los salvajes hacia fuera del ring.")]
+    [SerializeField] private float evictionSpeed = 6f;
+    [Tooltip("Cada cuántos segundos re-evaluamos si hay intrusos que desalojar mientras dura el combate.")]
+    [SerializeField] private float evictionScanInterval = 0.75f;
+
     // Refs de escena/vivos
     private Transform playerMonTf, wildMonTf;
     private CombatantController playerCbt, enemyCbt;
@@ -36,6 +45,10 @@ public class EncounterController : MonoBehaviour
     private State state = State.Idle;
     private Vector3 ringCenter;
     private bool ended = false;
+
+    // Desalojo
+    private readonly Dictionary<CreatureBehavior, Coroutine> activeEvictions = new Dictionary<CreatureBehavior, Coroutine>();
+    private Coroutine evictionScannerCo;
 
     // --- Config en runtime (llamada por CombatService) ---
     public void ApplyConfig(float? offsetFromCenter = null, float? playerRingRadius = null)
@@ -79,6 +92,9 @@ public class EncounterController : MonoBehaviour
         // Poner a ambos en "modo combate" (desactiva rutinas de mundo)
         ToggleCombatOn(playerMonTf, true);
         ToggleCombatOn(wildMonTf, true);
+
+        // Desalojar salvajes dentro del ring y mantener el ring limpio durante el combate
+        StartEviction();
 
         // Arranque del ciclo
         StartCoroutine(CoRun());
@@ -187,6 +203,9 @@ public class EncounterController : MonoBehaviour
         ended = true;
         state = State.Ended;
 
+        // Parar scanner/evictions y limpiar
+        StopEviction();
+
         // Destruir HUDs si existen
         if (playerHudGO) Destroy(playerHudGO);
         if (enemyHudGO) Destroy(enemyHudGO);
@@ -282,6 +301,129 @@ public class EncounterController : MonoBehaviour
         hud.SendMessage("SetCamera", cam, SendMessageOptions.DontRequireReceiver);
         hud.SendMessage("SetOffset", hudOffset, SendMessageOptions.DontRequireReceiver);
         hud.SendMessage("Refresh", SendMessageOptions.DontRequireReceiver);
+    }
+
+    // -------------------- Desalojo de terceros --------------------
+    private void StartEviction()
+    {
+        // Primer barrido inmediato
+        EvictCreaturesInsideRing();
+
+        // Scanner periódico para mantener el ring limpio
+        evictionScannerCo = StartCoroutine(CoEvictionScanner());
+    }
+
+    private void StopEviction()
+    {
+        if (evictionScannerCo != null) { StopCoroutine(evictionScannerCo); evictionScannerCo = null; }
+
+        foreach (var kv in activeEvictions)
+        {
+            if (kv.Value != null) StopCoroutine(kv.Value);
+            // Asegurar que su IA queda habilitada si el combate terminó
+            var beh = kv.Key;
+            if (beh != null && beh.isActiveAndEnabled)
+                beh.SetCombatMode(false);
+        }
+        activeEvictions.Clear();
+    }
+
+    private IEnumerator CoEvictionScanner()
+    {
+        var wait = new WaitForSeconds(Mathf.Max(0.1f, evictionScanInterval));
+        while (!ended)
+        {
+            EvictCreaturesInsideRing();
+            yield return wait;
+        }
+    }
+
+    private void EvictCreaturesInsideRing()
+    {
+        // Buscar todos los salvajes activos
+        var all = FindObjectsOfType<CreatureBehavior>();
+        foreach (var beh in all)
+        {
+            if (beh == null || !beh.isActiveAndEnabled) continue;
+
+            // Excluir al enemigo del encuentro y a cualquier cosa colgada de los combatientes
+            if (IsSameRoot(beh.transform, wildMonTf) || IsSameRoot(beh.transform, playerMonTf))
+                continue;
+
+            var pos = beh.transform.position;
+            var toCenter = pos - ringCenter; toCenter.y = 0f;
+            float dist = toCenter.magnitude;
+
+            // Si está dentro del ring + margen pequeño, desalojar
+            if (dist < ringRadiusForPlayer)
+            {
+                // Si ya estamos desalojándolo, continuar
+                if (activeEvictions.ContainsKey(beh)) continue;
+
+                // Lanzar tarea de desalojo
+                var co = StartCoroutine(CoEvict(beh));
+                activeEvictions[beh] = co;
+            }
+        }
+    }
+
+    private IEnumerator CoEvict(CreatureBehavior beh)
+    {
+        if (beh == null) yield break;
+
+        // Pausar su IA de mundo durante el desalojo
+        beh.SetCombatMode(true); // reutilizamos el bloqueo de movimiento/IA
+
+        var tf = beh.transform;
+        Vector3 start = tf.position;
+
+        // Dirección radial desde el centro hacia el salvaje (nunca hacia el centro)
+        Vector3 radial = (start - ringCenter); radial.y = 0f;
+        if (radial.sqrMagnitude < 0.0001f) radial = UnityEngine.Random.onUnitSphere; // caso degenerado
+        radial.y = 0f; radial.Normalize();
+
+        // Objetivo: ring + clearance
+        Vector3 target = ringCenter + radial * (ringRadiusForPlayer + Mathf.Max(0.1f, evictionClearance));
+        target.y = start.y;
+
+        float maxTime = 2.5f + (Vector3.Distance(start, target) / Mathf.Max(0.01f, evictionSpeed));
+        float t = 0f;
+
+        while (!ended && beh != null && tf != null)
+        {
+            float step = evictionSpeed * Time.deltaTime;
+            tf.position = Vector3.MoveTowards(tf.position, target, step);
+
+            // Orientación opcional hacia su dirección de movimiento
+            Vector3 dir = (target - tf.position); dir.y = 0f;
+            if (dir.sqrMagnitude > 0.0001f)
+            {
+                var look = Quaternion.LookRotation(dir);
+                tf.rotation = Quaternion.Slerp(tf.rotation, look, 10f * Time.deltaTime);
+            }
+
+            // ¿Ya está fuera?
+            Vector3 flat = tf.position - ringCenter; flat.y = 0f;
+            if (flat.magnitude >= ringRadiusForPlayer + Mathf.Max(0.1f, evictionClearance) - 0.05f)
+                break;
+
+            t += Time.deltaTime;
+            if (t >= maxTime) break; // cortar por seguridad
+            yield return null;
+        }
+
+        // Reanudar su IA de mundo si el combate continúa y el salvaje sigue válido
+        if (!ended && beh != null && beh.isActiveAndEnabled)
+            beh.SetCombatMode(false);
+
+        activeEvictions.Remove(beh);
+    }
+
+    private static bool IsSameRoot(Transform a, Transform b)
+    {
+        if (a == null || b == null) return false;
+        Transform ra = a.root, rb = b.root;
+        return ra == rb;
     }
 }
 
