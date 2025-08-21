@@ -27,8 +27,9 @@ public class ItemSelectorUI : MonoBehaviour
     public TextMeshProUGUI txtLevelPokemon;
 
     [Header("Colores")]
-    public Color colorDisponible = Color.white;
-    public Color colorAgotado = new Color(1f, 1f, 1f, 0.35f); // grisear cuando no usable
+    public Color colorDisponible = Color.white;                    // normal
+    public Color colorAgotado = new Color(1f, 1f, 1f, 0.35f);      // activo (gris)
+    public Color colorDebilitado = new Color(1f, 0.2f, 0.2f, 1f);  // KO (rojo)
 
     [Header("Input")]
     public KeyCode toggleKey = KeyCode.Q; // cambiar modo
@@ -45,6 +46,10 @@ public class ItemSelectorUI : MonoBehaviour
 
     private PlayerController playerController;
 
+    // Bloqueo durante “modo Capturar”
+    private bool captureLock = false;
+    public bool IsCaptureLocked => captureLock;
+
     // --------------- Ciclo de vida ---------------
     private void Awake()
     {
@@ -57,15 +62,14 @@ public class ItemSelectorUI : MonoBehaviour
 
     private void OnEnable()
     {
-        // Si este panel se activa después de que el inventario ya esté cargado, refresca
         RebuildBalls();
+        RebuildParty();
         ClampIndices();
         UpdateUI();
     }
 
     private void Start()
     {
-        // Refresco diferido un frame por si InventoryManager popula en Start
         StartCoroutine(DeferredInitialRefresh());
     }
 
@@ -78,7 +82,8 @@ public class ItemSelectorUI : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(toggleKey))
+        // Toggle de modo solo si NO estamos bloqueados por captura
+        if (!captureLock && Input.GetKeyDown(toggleKey))
         {
             SetMode(currentMode == SelectorMode.Pokeball ? SelectorMode.Pokemon : SelectorMode.Pokeball);
         }
@@ -111,8 +116,26 @@ public class ItemSelectorUI : MonoBehaviour
     // --------------- API pública ---------------
     public void SetMode(SelectorMode mode)
     {
+        // Si estamos en captura, forzamos siempre Pokéballs
+        if (captureLock) mode = SelectorMode.Pokeball;
         currentMode = mode;
         UpdateUI();
+    }
+
+    /// Bloquea/desbloquea el selector en modo Pokéballs (para “Capturar” en combate).
+    public void SetCaptureLock(bool locked)
+    {
+        captureLock = locked;
+        if (captureLock)
+        {
+            currentMode = SelectorMode.Pokeball;
+            RefreshBalls();
+        }
+        else
+        {
+            // al desbloquear, no tocamos el modo; el jugador decidirá con Q
+            UpdateUI();
+        }
     }
 
     public PokeballData GetSelectedBallData()
@@ -150,13 +173,14 @@ public class ItemSelectorUI : MonoBehaviour
         RebuildParty();
         ClampIndices();
         if (currentMode == SelectorMode.Pokemon) UpdateUI_Pokemon();
+        else UpdateUI_Balls();
     }
 
     public void RefreshBalls()
     {
         RebuildBalls();
         ClampIndices();
-        if (currentMode == SelectorMode.Pokeball) UpdateUI_Balls();
+        UpdateUI_Balls();
     }
 
     // --------------- Data builders ---------------
@@ -171,8 +195,7 @@ public class ItemSelectorUI : MonoBehaviour
         {
             if (entry == null || entry.item == null) continue;
             if (entry.item.category != ItemCategory.Pokeball) continue;
-            if (!entry.unlocked) continue; // mostramos solo las desbloqueadas
-            // ⛔ YA NO filtramos por cantidad>0: queremos verlas aunque estén a 0 (se grisearán)
+            if (!entry.unlocked) continue; // mostramos aunque quantity sea 0 (se grisearán)
             if (entry.item is PokeballData)
                 pokeballInventory.Add(entry);
         }
@@ -204,7 +227,7 @@ public class ItemSelectorUI : MonoBehaviour
     }
 
     // --------------- UI ---------------
-    private void UpdateUI()
+    public void UpdateUI()
     {
         if (panelBalls) panelBalls.SetActive(currentMode == SelectorMode.Pokeball);
         if (panelPokemon) panelPokemon.SetActive(currentMode == SelectorMode.Pokemon);
@@ -229,12 +252,10 @@ public class ItemSelectorUI : MonoBehaviour
 
     private void UpdateUI_Balls()
     {
-        // No reconstruyo aquí para no alterar índices durante el scroll
         ClampIndices();
 
         if (pokeballInventory.Count == 0)
         {
-            // Oculta todas las imágenes si no hay balls
             if (imgActiveBall) { imgActiveBall.enabled = false; imgActiveBall.sprite = null; }
             if (imgPreviousBall) { imgPreviousBall.enabled = false; imgPreviousBall.sprite = null; }
             if (imgNextBall) { imgNextBall.enabled = false; imgNextBall.sprite = null; }
@@ -253,7 +274,7 @@ public class ItemSelectorUI : MonoBehaviour
         {
             imgActiveBall.enabled = (icon != null);
             imgActiveBall.sprite = icon;
-            imgActiveBall.color = qty > 0 ? colorDisponible : colorAgotado; // gris si 0
+            imgActiveBall.color = qty > 0 ? colorDisponible : colorAgotado;
         }
         if (txtNameBalls) txtNameBalls.text = display;
         if (txtCountBalls) txtCountBalls.text = "x" + qty;
@@ -266,7 +287,7 @@ public class ItemSelectorUI : MonoBehaviour
                 var prevIcon = IconFromItem(pokeballInventory[ballIndex - 1]);
                 imgPreviousBall.enabled = (prevIcon != null);
                 imgPreviousBall.sprite = prevIcon;
-                // (sin grisear; es solo preview)
+                imgPreviousBall.color = colorDisponible;
             }
             else
             {
@@ -283,6 +304,7 @@ public class ItemSelectorUI : MonoBehaviour
                 var nextIcon = IconFromItem(pokeballInventory[ballIndex + 1]);
                 imgNextBall.enabled = (nextIcon != null);
                 imgNextBall.sprite = nextIcon;
+                imgNextBall.color = colorDisponible;
             }
             else
             {
@@ -294,7 +316,6 @@ public class ItemSelectorUI : MonoBehaviour
 
     private void UpdateUI_Pokemon()
     {
-        // Igual que balls: no reconstruyo aquí para mantener navegación fluida
         ClampIndices();
 
         if (partyList.Count == 0)
@@ -313,28 +334,46 @@ public class ItemSelectorUI : MonoBehaviour
         bool isActive = active != null && selected.UniqueID == active.UniqueID;
         bool isFainted = selected.currentHP <= 0;
 
-        // Centro
-        ShowImage(imgActivePokemon, selected.species.pokemonSprite, (isActive || isFainted) ? colorAgotado : colorDisponible);
-        if (txtNamePokemon) txtNamePokemon.text = selected.species.pokemonName;
-        if (txtLevelPokemon) txtLevelPokemon.text = isActive ? "Activo" : (isFainted ? "Debilitado" : $"Nv. {selected.level}");
+        // Color y texto de estado
+        Color centerTint = colorDisponible;
+        string stateText = $"Nv. {selected.level}";
 
-        // Prev (solo si existe)
+        if (isFainted)
+        {
+            centerTint = colorDebilitado;      // rojo si KO
+            stateText = "Debilitado";
+            isActive = false;
+        }
+        else if (isActive)
+        {
+            centerTint = colorAgotado;         // gris para activo
+            stateText = "Activo";
+        }
+
+        // Centro
+        ShowImage(imgActivePokemon, selected.species.pokemonSprite, centerTint);
+        if (txtNamePokemon) txtNamePokemon.text = selected.species.pokemonName;
+        if (txtLevelPokemon) txtLevelPokemon.text = stateText;
+
+        // Prev
         if (pokemonIndex > 0)
         {
             var prev = partyList[pokemonIndex - 1];
-            bool prevActive = active != null && prev.UniqueID == active.UniqueID;
-            bool prevFainted = prev.currentHP <= 0;
-            ShowImage(imgPreviousPokemon, prev.species.pokemonSprite, (prevActive || prevFainted) ? colorAgotado : colorDisponible);
+            bool prevIsActive = active != null && prev.UniqueID == active.UniqueID && prev.currentHP > 0;
+            bool prevKO = prev.currentHP <= 0;
+            Color tint = prevKO ? colorDebilitado : (prevIsActive ? colorAgotado : colorDisponible);
+            ShowImage(imgPreviousPokemon, prev.species.pokemonSprite, tint);
         }
         else HideImage(imgPreviousPokemon);
 
-        // Next (solo si existe)
+        // Next
         if (pokemonIndex < partyList.Count - 1)
         {
             var next = partyList[pokemonIndex + 1];
-            bool nextActive = active != null && next.UniqueID == active.UniqueID;
-            bool nextFainted = next.currentHP <= 0;
-            ShowImage(imgNextPokemon, next.species.pokemonSprite, (nextActive || nextFainted) ? colorAgotado : colorDisponible);
+            bool nextIsActive = active != null && next.UniqueID == active.UniqueID && next.currentHP > 0;
+            bool nextKO = next.currentHP <= 0;
+            Color tint = nextKO ? colorDebilitado : (nextIsActive ? colorAgotado : colorDisponible);
+            ShowImage(imgNextPokemon, next.species.pokemonSprite, tint);
         }
         else HideImage(imgNextPokemon);
     }

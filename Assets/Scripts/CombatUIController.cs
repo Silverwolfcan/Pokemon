@@ -11,8 +11,28 @@ public class CombatUIController : MonoBehaviour
 
     [Header("Moves")]
     public GameObject panelMoves;
+
+    [Tooltip("Botones de los 4 movimientos en orden 0..3.")]
     public Button[] moveButtons = new Button[4];
-    public TMP_Text[] moveLabels = new TMP_Text[4];
+
+    [Tooltip("Labels del NOMBRE de cada movimiento (0..3).")]
+    public TMP_Text[] moveNameLabels = new TMP_Text[4];
+
+    [Tooltip("Labels de PP (formato x/y) para cada movimiento (0..3).")]
+    public TMP_Text[] movePPLabels = new TMP_Text[4];
+
+    [Tooltip("Labels del TIPO para cada movimiento (0..3).")]
+    public TMP_Text[] moveTypeLabels = new TMP_Text[4];
+
+    [Header("Estilos")]
+    [Tooltip("Color del texto general (nombre, tipo y PP cuando hay PP).")]
+    public Color textColor = Color.black;
+    [Tooltip("Color del texto de PP cuando hay PP (>0).")]
+    public Color ppOkColor = Color.black;
+    [Tooltip("Color del texto de PP cuando está en 0.")]
+    public Color ppZeroColor = new Color(0.85f, 0f, 0f, 1f);
+    [Tooltip("Color del texto del tipo.")]
+    public Color typeColor = Color.black;
 
     private TurnController turn;
     private PlayerController playerController;
@@ -90,19 +110,21 @@ public class CombatUIController : MonoBehaviour
         btnSwitch.onClick.RemoveAllListeners();
         btnSwitch.onClick.AddListener(() =>
         {
-            // Aquí abrirías tu panel de equipo si procede
+            // Panel de equipo si procede
         });
 
         btnItems.onClick.RemoveAllListeners();
         btnItems.onClick.AddListener(() =>
         {
-            // Aquí abrirías inventario si procede
+            // Inventario si procede
         });
 
         // Botones de movimientos
         for (int i = 0; i < moveButtons.Length; i++)
         {
             int idx = i;
+            if (moveButtons[i] == null) continue;
+
             moveButtons[i].onClick.RemoveAllListeners();
             moveButtons[i].onClick.AddListener(() =>
             {
@@ -155,25 +177,79 @@ public class CombatUIController : MonoBehaviour
     {
         var all = FindObjectsOfType<CombatantController>();
         CombatantController player = null;
-        foreach (var c in all)
-        {
-            if (c.IsPlayer) { player = c; break; }
-        }
-        if (player == null || player.Model == null) return;
+        foreach (var c in all) { if (c.IsPlayer) { player = c; break; } }
+        if (player == null || player.Model == null) { ClearAllMoveSlots(); return; }
 
         var moves = player.Model.Moves;
-        for (int i = 0; i < moveLabels.Length; i++)
+
+        for (int i = 0; i < 4; i++)
         {
-            if (i < moves.Count && moves[i] != null && moves[i].data != null)
+            var hasData = (moves != null && i < moves.Count && moves[i] != null && moves[i].data != null);
+
+            // Nombre
+            if (moveNameLabels != null && i < moveNameLabels.Length && moveNameLabels[i] != null)
             {
-                moveLabels[i].text = moves[i].data.moveName;
-                moveButtons[i].interactable = moves[i].currentPP > 0;
+                moveNameLabels[i].text = hasData ? moves[i].data.moveName : "-";
+                moveNameLabels[i].color = textColor;
             }
-            else
+
+            // PP
+            if (movePPLabels != null && i < movePPLabels.Length && movePPLabels[i] != null)
             {
-                moveLabels[i].text = "-";
+                if (hasData)
+                {
+                    int cur = Mathf.Max(0, moves[i].currentPP);
+                    int max = Mathf.Max(0, moves[i].maxPP);
+                    movePPLabels[i].text = $"{cur}/{max}";
+                    movePPLabels[i].color = (cur > 0) ? ppOkColor : ppZeroColor;
+                }
+                else
+                {
+                    movePPLabels[i].text = "";
+                    movePPLabels[i].color = ppOkColor;
+                }
+            }
+
+            // Tipo
+            if (moveTypeLabels != null && i < moveTypeLabels.Length && moveTypeLabels[i] != null)
+            {
+                moveTypeLabels[i].text = hasData ? moves[i].data.type.ToString() : "";
+                moveTypeLabels[i].color = typeColor;
+            }
+
+            // Interactuable
+            if (moveButtons != null && i < moveButtons.Length && moveButtons[i] != null)
+            {
+                bool canUse = hasData && moves[i].currentPP > 0;
+                moveButtons[i].interactable = canUse;
+            }
+        }
+    }
+
+    private void ClearAllMoveSlots()
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            if (moveNameLabels != null && i < moveNameLabels.Length && moveNameLabels[i] != null)
+            {
+                moveNameLabels[i].text = "-";
+                moveNameLabels[i].color = textColor;
+            }
+
+            if (movePPLabels != null && i < movePPLabels.Length && movePPLabels[i] != null)
+            {
+                movePPLabels[i].text = "";
+                movePPLabels[i].color = ppOkColor;
+            }
+
+            if (moveTypeLabels != null && i < moveTypeLabels.Length && moveTypeLabels[i] != null)
+            {
+                moveTypeLabels[i].text = "";
+                moveTypeLabels[i].color = typeColor;
+            }
+
+            if (moveButtons != null && i < moveButtons.Length && moveButtons[i] != null)
                 moveButtons[i].interactable = false;
-            }
         }
     }
 

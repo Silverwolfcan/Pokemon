@@ -14,8 +14,12 @@ public class PlayerController : MonoBehaviour
 
     [Header("Zoom y apuntado")]
     public Camera cam;
+    [Tooltip("FOV mientras apuntas (click derecho).")]
     public float zoomFov = 35f;
+    [Tooltip("Velocidad de interpolación hacia/desde el FOV de zoom.")]
     public float zoomSpeed = 10f;
+    [Tooltip("Crosshair que se muestra solo mientras apuntas (opcional).")]
+    public GameObject crosshair;
 
     [Header("Lanzamiento")]
     public float maxThrowDistance = 15f;
@@ -37,19 +41,40 @@ public class PlayerController : MonoBehaviour
     private float rotX, rotY;
     private bool controlsEnabled = true;
 
+    // Estado de apuntado
+    private bool isAiming = false;
+    private float defaultFov = 60f;
+
     void Awake()
     {
         character = GetComponent<CharacterController>();
         if (!cam) cam = Camera.main;
+        if (cam) defaultFov = cam.fieldOfView;
+
+        // crosshair oculto de inicio
+        if (crosshair) crosshair.SetActive(false);
     }
 
     void Update()
     {
-        if (!controlsEnabled) return;
+        if (!controlsEnabled)
+        {
+            // Si se deshabilitan controles (p.ej. menú), salimos del modo apuntado.
+            SetAiming(false);
+            return;
+        }
+
+        // Limpiar activo si fue destruido/desactivado o quedó a 0 HP
+        ValidateActiveSummon();
+
+        // Actualiza apuntado (manteniendo botón derecho)
+        bool aimHeld = Input.GetMouseButton(1);
+        SetAiming(aimHeld);
 
         HandleMovement();
 
-        if (Input.GetMouseButtonDown(0))
+        // Click izquierdo: solo si estamos apuntando
+        if (isAiming && Input.GetMouseButtonDown(0))
         {
             if (itemSelector != null && itemSelector.CurrentMode == SelectorMode.Pokeball)
             {
@@ -82,13 +107,30 @@ public class PlayerController : MonoBehaviour
 
         transform.rotation = Quaternion.Euler(0, rotX, 0);
         if (cameraTransform) cameraTransform.localRotation = Quaternion.Euler(rotY, 0, 0);
+
+        // Interpolar FOV según estado de apuntado
+        if (cam)
+        {
+            float target = isAiming ? zoomFov : defaultFov;
+            cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, target, Time.deltaTime * zoomSpeed);
+        }
+    }
+
+    private void SetAiming(bool aiming)
+    {
+        if (isAiming == aiming) return;
+        isAiming = aiming;
+
+        // Crosshair ON/OFF
+        if (crosshair) crosshair.SetActive(isAiming);
+
+        // Si dejamos de apuntar, no hacemos nada más; el FOV vuelve solo por Update()
     }
 
     void TryThrowPokeball()
     {
         if (Time.time - lastThrowTime < throwCooldown) return;
 
-        // 1) Validar selección y disponibilidad
         var entry = itemSelector != null ? itemSelector.GetSelectedBallEntry() : null;
         if (entry == null || entry.item == null)
         {
@@ -97,12 +139,10 @@ public class PlayerController : MonoBehaviour
         }
         if (entry.quantity <= 0)
         {
-            // La UI ya la grisea y muestra x0
             Debug.Log("[PlayerController] No te quedan unidades de: " + entry.item.name);
             return;
         }
 
-        // 2) Consumir 1 unidad (actualiza la UI)
         if (!itemSelector.TryConsumeSelectedBall())
         {
             Debug.Log("[PlayerController] No se pudo consumir Pokéball.");
@@ -111,7 +151,6 @@ public class PlayerController : MonoBehaviour
 
         lastThrowTime = Time.time;
 
-        // 3) Lanzar físicamente la ball
         Vector3 origin = throwOrigin ? throwOrigin.position : cam.transform.position;
         Vector3 dir = cam.transform.forward;
 
@@ -119,7 +158,7 @@ public class PlayerController : MonoBehaviour
         if (Physics.Raycast(origin, dir, out RaycastHit hit, maxThrowDistance, movementMask))
             end = hit.point;
 
-        var ballData = entry.item as PokeballData; // ya validado arriba
+        var ballData = entry.item as PokeballData;
         var ball = Instantiate(pokeballPrefab, origin, Quaternion.identity).GetComponent<Ball>();
         ball.Initialize(origin, end, 4f, 1.5f, ballData);
     }
@@ -146,15 +185,18 @@ public class PlayerController : MonoBehaviour
 
     void HandleSummonedPokemonAction()
     {
+        // Al hacer click cuando hay activo, si estamos mirando al propio Pokémon, lo retiramos.
         Ray ray = cam.ScreenPointToRay(new Vector3(Screen.width / 2, Screen.height / 2));
         if (Physics.Raycast(ray, out RaycastHit hit, maxThrowDistance, pokemonPlayerMask))
         {
-            Destroy(activeSummonedPokemon.gameObject);
-            activeSummonedPokemon = null;
-            activePokemonID = null;
-            itemSelector?.RefreshCapturedPokemon();
+            if (activeSummonedPokemon != null)
+            {
+                Destroy(activeSummonedPokemon.gameObject);
+                ClearActiveSummonRef();
+            }
             return;
         }
+
         // Aquí irían órdenes al Pokémon activo en el mundo si las implementas.
     }
 
@@ -165,12 +207,46 @@ public class PlayerController : MonoBehaviour
         itemSelector.SetMode(newMode);
     }
 
-    public void EnableControls(bool enabled) => controlsEnabled = enabled;
+    public void EnableControls(bool enabled)
+    {
+        controlsEnabled = enabled;
+        if (!controlsEnabled) SetAiming(false); // al entrar en UI/combate, soltar apuntado
+    }
 
     public PokemonInstance GetActivePokemon()
     {
         if (string.IsNullOrEmpty(activePokemonID)) return null;
         var party = PokemonStorageManager.Instance.PlayerParty?.ToList();
         return party?.FirstOrDefault(p => p.UniqueID == activePokemonID);
+    }
+
+    // --- Helpers de saneamiento del activo ---
+    private void ValidateActiveSummon()
+    {
+        if (activeSummonedPokemon == null)
+        {
+            var p = GetActivePokemon();
+            if (p != null && p.currentHP <= 0) ClearActiveSummonRef();
+            return;
+        }
+
+        if (activeSummonedPokemon.gameObject == null || !activeSummonedPokemon.gameObject.activeInHierarchy)
+        {
+            ClearActiveSummonRef();
+            return;
+        }
+
+        var pi = GetActivePokemon();
+        if (pi == null || pi.currentHP <= 0)
+        {
+            ClearActiveSummonRef();
+        }
+    }
+
+    private void ClearActiveSummonRef()
+    {
+        activeSummonedPokemon = null;
+        activePokemonID = null;
+        itemSelector?.RefreshCapturedPokemon();
     }
 }

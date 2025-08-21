@@ -4,119 +4,94 @@ using UnityEngine;
 
 public class EncounterController : MonoBehaviour
 {
-    public enum State { Idle, Positioning, PlayerTurn, EnemyTurn, Resolving, Ended }
+    public enum State { Idle, Positioning, PlayerTurn, EnemyTurn, Ended }
 
     [Header("Ring / límites")]
+    [Tooltip("Radio máximo para que el jugador se aleje del centro del combate.")]
     [SerializeField] private float ringRadiusForPlayer = 10f;
 
-    [Tooltip("Distancia desde el centro a cada Pokémon. 2.5 => separación total ~5 m.")]
+    [Tooltip("Distancia desde el centro (midpoint) a cada Pokémon. 2.5 => separación total ~5 m.")]
     [SerializeField] private float combatantOffsetFromCenter = 2.5f;
 
-    [Header("Movimiento de posicionamiento")]
     [SerializeField] private float repositionSpeed = 12f;
     [SerializeField] private float snapTolerance = 0.05f;
+    [SerializeField] private float turnIntroDelay = 0.25f;
 
-    [Header("Turnos")]
-    [SerializeField] private float turnIntroDelay = 0.15f;
+    [Header("HUD (opcional)")]
+    [Tooltip("Prefab del HUD (barra vida/nombre/nivel).")]
+    [SerializeField] private GameObject combatantHUDPrefab;
+    [Tooltip("Offset local si se usa fallback por SendMessage (cuando el prefab no tiene CombatantHUD).")]
+    [SerializeField] private Vector3 hudOffset = new Vector3(0, 2.0f, 0);
 
-    [Header("Refs (opcional en prefab)")]
-    [SerializeField] private TurnController turnController;
-    [SerializeField] private CombatBoundary boundary;
+    // Refs de escena/vivos
+    private Transform playerMonTf, wildMonTf;
+    private CombatantController playerCbt, enemyCbt;
+    private TurnController turnCtl;
+    private CombatBoundary boundary;
 
-    [Header("HUD")]
-    [Tooltip("Prefab con Canvas (World Space) + CombatantHUD. Se instancian 2: jugador y salvaje.")]
-    [SerializeField] private GameObject combatantHudPrefab;
-
-    private State state = State.Idle;
-    private bool ended = false;
-
-    private CombatantController playerCbt;
-    private CombatantController enemyCbt;
-
-    private Transform playerMonTf;
-    private Transform wildMonTf;
-
-    private PokemonInstance playerModel;
-    private PokemonInstance wildModel;
-
-    private PlayerController playerController;
-
-    private Vector3 ringCenter;
-    private Vector3 targetPlayerPos, targetEnemyPos;
+    // HUD instanciados (si procede)
+    private GameObject playerHudGO, enemyHudGO;
 
     private Action onEndCallback;
+    private State state = State.Idle;
+    private Vector3 ringCenter;
+    private bool ended = false;
 
-    // HUD instanciados
-    private GameObject playerHudGO;
-    private GameObject enemyHudGO;
-
-    public TurnController TurnController => turnController;
-
-    public void ApplyConfig(float offsetFromCenter, float playerRingRadius)
+    // --- Config en runtime (llamada por CombatService) ---
+    public void ApplyConfig(float? offsetFromCenter = null, float? playerRingRadius = null)
     {
-        combatantOffsetFromCenter = offsetFromCenter;
-        ringRadiusForPlayer = playerRingRadius;
+        if (offsetFromCenter.HasValue)
+            combatantOffsetFromCenter = Mathf.Max(0.1f, offsetFromCenter.Value);
+        if (playerRingRadius.HasValue)
+            ringRadiusForPlayer = Mathf.Max(1f, playerRingRadius.Value);
     }
 
-    public void Begin(Transform playerTf, PokemonInstance player,
-                      Transform wildTf, PokemonInstance wild,
-                      Action onEnd = null)
+    /// <summary>Inicializa el encuentro con las referencias de los dos pokémon y callback de salida.</summary>
+    public void Begin(Transform playerMonTf, PokemonInstance playerMon,
+                      Transform wildMonTf, PokemonInstance wildMon,
+                      Action onEnd)
     {
-        if (state != State.Idle) { Debug.LogWarning("[Encounter] Begin() ignorado (no Idle)."); return; }
+        this.playerMonTf = playerMonTf;
+        this.wildMonTf = wildMonTf;
+        this.onEndCallback = onEnd;
 
-        onEndCallback = onEnd;
+        // Centro del ring: punto medio entre ambos al iniciar
+        ringCenter = (playerMonTf.position + wildMonTf.position) * 0.5f;
 
-        playerMonTf = playerTf;
-        wildMonTf = wildTf;
-        playerModel = player;
-        wildModel = wild;
+        // Límite de alejamiento del jugador (clamp dentro del ring)
+        boundary = gameObject.AddComponent<CombatBoundary>();
+        boundary.Setup(() => GetPlayerPosition(), (pos) => SetPlayerPosition(pos), () => ringCenter, ringRadiusForPlayer);
 
-        // Bloquea control/cámara como en tus menús
-        playerController = FindAnyObjectByType<PlayerController>();
-        playerController?.EnableControls(false);
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
-
-        // Combatants (operan sobre el Transform real)
+        // Combatants (siempre operan sobre el Transform real en escena)
         playerCbt = gameObject.AddComponent<CombatantController>();
-        playerCbt.Init(playerMonTf, playerModel, true);
+        playerCbt.Init(playerMonTf, playerMon, true);
 
         enemyCbt = gameObject.AddComponent<CombatantController>();
-        enemyCbt.Init(wildMonTf, wildModel, false);
+        enemyCbt.Init(wildMonTf, wildMon, false);
 
-        // Pausar comportamientos de mundo
-        ToggleCombatMode(playerMonTf, true);
-        ToggleCombatMode(wildMonTf, true);
+        // Turn controller
+        turnCtl = gameObject.AddComponent<TurnController>();
+        turnCtl.Setup(playerCbt, enemyCbt);
 
-        // Centro y destinos
-        ringCenter = ComputeMidpointXZ(playerMonTf.position, wildMonTf.position);
-        ComputeTargets();
+        // HUDs (opcionales)
+        TrySpawnHUDs(playerMonTf, playerMon, wildMonTf, wildMon);
 
-        // Boundary del jugador
-        if (!boundary) boundary = gameObject.AddComponent<CombatBoundary>();
-        boundary.Setup(
-            getPlayerPos: () => playerCbt.Position,
-            setPlayerPos: p => playerCbt.Position = p,
-            getCenter: () => ringCenter,
-            radius: ringRadiusForPlayer
-        );
+        // Poner a ambos en "modo combate" (desactiva rutinas de mundo)
+        ToggleCombatOn(playerMonTf, true);
+        ToggleCombatOn(wildMonTf, true);
 
-        // TurnController con callback de fin (Huir, KOs, etc.)
-        if (!turnController) turnController = gameObject.AddComponent<TurnController>();
-        turnController.Setup(playerCbt, enemyCbt, (result) => EndEncounter(result));
-
-        // ====== HUDs ======
-        SpawnHUDs();
-
-        // Loop
+        // Arranque del ciclo
         StartCoroutine(CoRun());
     }
 
-    public void ForceEnd() => EndEncounter(EncounterResult.ForcedEnd);
+    /// <summary>Finaliza el encuentro sin condiciones (por ejemplo, cambio/teletransporte de escena).</summary>
+    public void ForceEnd()
+    {
+        if (ended) return;
+        EndEncounter(EncounterResult.ForcedEnd);
+    }
 
-    // Punto de entrada oficial para cierre por CAPTURA (lo llamará CombatService.NotifyCaptureSuccess)
-    public void EndByCapture() => EndEncounter(EncounterResult.Capture);
-
+    // -------------------- Bucle del encuentro --------------------
     private IEnumerator CoRun()
     {
         state = State.Positioning;
@@ -124,138 +99,197 @@ public class EncounterController : MonoBehaviour
 
         while (!ended)
         {
-            if (playerCbt.IsFainted) { EndEncounter(EncounterResult.PlayerFainted); yield break; }
-            if (enemyCbt.IsFainted) { EndEncounter(EncounterResult.EnemyFainted); yield break; }
+            if (playerCbt.IsFainted) { EndEncounter(EncounterResult.PlayerFainted); break; }
+            if (enemyCbt.IsFainted) { EndEncounter(EncounterResult.EnemyFainted); break; }
 
             state = State.PlayerTurn;
             yield return new WaitForSeconds(turnIntroDelay);
-            yield return StartCoroutine(turnController.DoPlayerTurn(ringCenter, combatantOffsetFromCenter));
-            if (ended) yield break;
+            yield return StartCoroutine(turnCtl.DoPlayerTurn(ringCenter, combatantOffsetFromCenter));
+            if (ended) break;
 
-            if (playerCbt.IsFainted) { EndEncounter(EncounterResult.PlayerFainted); yield break; }
-            if (enemyCbt.IsFainted) { EndEncounter(EncounterResult.EnemyFainted); yield break; }
+            if (playerCbt.IsFainted) { EndEncounter(EncounterResult.PlayerFainted); break; }
+            if (enemyCbt.IsFainted) { EndEncounter(EncounterResult.EnemyFainted); break; }
 
             state = State.EnemyTurn;
             yield return new WaitForSeconds(turnIntroDelay);
-            yield return StartCoroutine(turnController.DoEnemyTurn(ringCenter, combatantOffsetFromCenter));
+            yield return StartCoroutine(turnCtl.DoEnemyTurn(ringCenter, combatantOffsetFromCenter));
+            if (ended) break;
         }
     }
 
     private IEnumerator CoPositionCombatants()
     {
-        ComputeTargets();
-
-        playerCbt.Face(wildMonTf.position);
-        enemyCbt.Face(playerMonTf.position);
-
-        while (true)
-        {
-            float step = repositionSpeed * Time.deltaTime;
-
-            playerCbt.MoveTowardsPosition(targetPlayerPos, step);
-            enemyCbt.MoveTowardsPosition(targetEnemyPos, step);
-
-            bool pDone = new Vector2(playerCbt.Position.x, playerCbt.Position.z).Equals2D(targetPlayerPos, snapTolerance);
-            bool eDone = new Vector2(enemyCbt.Position.x, enemyCbt.Position.z).Equals2D(targetEnemyPos, snapTolerance);
-
-            if (pDone && eDone) break;
-            yield return null;
-        }
-
-        playerCbt.Position = targetPlayerPos;
-        enemyCbt.Position = targetEnemyPos;
-    }
-
-    private void ComputeTargets()
-    {
-        Vector3 pj = playerMonTf.position;
-        Vector3 en = wildMonTf.position;
-
-        Vector3 dir = en - pj;
+        // Dirección horizontal desde enemigo → jugador para colocar a ±offset
+        Vector3 dir = (playerMonTf.position - wildMonTf.position);
         dir.y = 0f;
         if (dir.sqrMagnitude < 0.0001f) dir = Vector3.forward;
         dir.Normalize();
 
-        ringCenter = ComputeMidpointXZ(pj, en);
+        Vector3 playerTarget = ringCenter + dir * combatantOffsetFromCenter;
+        Vector3 enemyTarget = ringCenter - dir * combatantOffsetFromCenter;
 
-        targetPlayerPos = ringCenter - dir * combatantOffsetFromCenter;
-        targetPlayerPos.y = pj.y;
+        // Teleport/lerp corto a posiciones objetivo + mirar al centro
+        float t = 0f;
+        float duration = 0.25f;
+        Vector3 pStart = playerCbt.Position;
+        Vector3 eStart = enemyCbt.Position;
 
-        targetEnemyPos = ringCenter + dir * combatantOffsetFromCenter;
-        targetEnemyPos.y = en.y;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float a = Mathf.Clamp01(t / duration);
+            playerCbt.Position = Vector3.Lerp(pStart, playerTarget, a);
+            enemyCbt.Position = Vector3.Lerp(eStart, enemyTarget, a);
+            playerCbt.Face(ringCenter);
+            enemyCbt.Face(ringCenter);
+            yield return null;
+        }
+
+        playerCbt.Position = playerTarget;
+        enemyCbt.Position = enemyTarget;
+        playerCbt.Face(ringCenter);
+        enemyCbt.Face(ringCenter);
     }
 
-    private static Vector3 ComputeMidpointXZ(Vector3 a, Vector3 b)
+    private void Update()
     {
-        return new Vector3((a.x + b.x) * 0.5f, Mathf.Min(a.y, b.y), (a.z + b.z) * 0.5f);
+        if (!ended && playerCbt != null && enemyCbt != null)
+            KeepCombatantsOnRing();
     }
 
+    private void KeepCombatantsOnRing()
+    {
+        KeepOnRing(playerCbt);
+        KeepOnRing(enemyCbt);
+    }
+
+    private void KeepOnRing(CombatantController cbt)
+    {
+        var current = cbt.Position;
+        var fromCenter = current - ringCenter; fromCenter.y = 0f;
+        if (fromCenter.sqrMagnitude < 0.0001f) fromCenter = Vector3.forward * 0.01f;
+
+        var desired = ringCenter + fromCenter.normalized * combatantOffsetFromCenter;
+        desired.y = current.y;
+
+        var dist = Vector3.Distance(current, desired);
+        if (dist > snapTolerance)
+        {
+            var step = repositionSpeed * Time.deltaTime;
+            cbt.MoveTowardsPosition(desired, step);
+            cbt.Face(ringCenter);
+        }
+    }
+
+    // -------------------- Cierre del encuentro --------------------
     private void EndEncounter(EncounterResult result)
     {
-        if (ended) return;
         ended = true;
         state = State.Ended;
 
-        // Limpieza de combatientes
-        playerCbt?.CleanupAfterBattle();
-        enemyCbt?.CleanupAfterBattle();
-
-        // Reanudar rutinas de mundo (jugador y salvaje)
-        ToggleCombatMode(playerMonTf, false);
-        ToggleCombatMode(wildMonTf, false);
-
-        // Restaurar control normal y cursor de gameplay
-        playerController?.EnableControls(true);
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
-
-        // Destruir HUDs
+        // Destruir HUDs si existen
         if (playerHudGO) Destroy(playerHudGO);
         if (enemyHudGO) Destroy(enemyHudGO);
 
-        // Notificar al caller (CombatService cierra UI y limpia)
-        onEndCallback?.Invoke();
+        // Limpieza de combatants (restaura flags/animaciones, etc.)
+        if (playerCbt != null) playerCbt.CleanupAfterBattle();
+        if (enemyCbt != null) enemyCbt.CleanupAfterBattle();
 
+        // Salir de modo combate en comportamientos de mundo
+        ToggleCombatOn(playerMonTf, false);
+        ToggleCombatOn(wildMonTf, false);
+
+        // Callback al creador (CombatService) y autodestrucción
+        onEndCallback?.Invoke();
         Destroy(gameObject);
     }
 
-    private static void ToggleCombatMode(Transform t, bool v)
+    private static void ToggleCombatOn(Transform tf, bool active)
     {
-        if (!t) return;
-        var pcb = t.GetComponent<PlayerCreatureBehavior>();
-        if (pcb) { pcb.SetCombatMode(v); return; }
-        var cb = t.GetComponent<CreatureBehavior>();
-        if (cb) cb.SetCombatMode(v);
+        if (!tf) return;
+
+        var pcb = tf.GetComponent<PlayerCreatureBehavior>() ?? tf.GetComponentInParent<PlayerCreatureBehavior>(true);
+        if (pcb != null) pcb.SetCombatMode(active);
+
+        var wild = tf.GetComponent<CreatureBehavior>() ?? tf.GetComponentInParent<CreatureBehavior>(true);
+        if (wild != null) wild.SetCombatMode(active);
     }
 
-    private void SpawnHUDs()
+    private Vector3 GetPlayerPosition()
     {
-        if (!combatantHudPrefab)
+        var pc = FindAnyObjectByType<PlayerController>();
+        return pc ? pc.transform.position : Vector3.zero;
+    }
+
+    private void SetPlayerPosition(Vector3 p)
+    {
+        var pc = FindAnyObjectByType<PlayerController>();
+        if (pc) pc.transform.position = p;
+    }
+
+    // -------------------- Señales de captura (Ball → CombatService → aquí) --------------------
+    public void NotifyCaptureSuccess()
+    {
+        if (ended) return;
+        EndEncounter(EncounterResult.Capture);
+    }
+
+    public void NotifyCaptureFailed()
+    {
+        if (ended) return;
+        if (turnCtl != null)
+            turnCtl.QueueCapture(); // consume el turno del jugador
+    }
+
+    // -------------------- HUD helpers --------------------
+    private void TrySpawnHUDs(Transform playerTf, PokemonInstance playerModel,
+                              Transform enemyTf, PokemonInstance enemyModel)
+    {
+        if (combatantHUDPrefab == null) return;
+
+        // Player HUD
+        playerHudGO = Instantiate(combatantHUDPrefab);
+        AttachHud(playerHudGO, playerTf, playerModel, true);
+
+        // Enemy HUD
+        enemyHudGO = Instantiate(combatantHUDPrefab);
+        AttachHud(enemyHudGO, enemyTf, enemyModel, false);
+    }
+
+    private void AttachHud(GameObject hud, Transform target, PokemonInstance model, bool isPlayer)
+    {
+        if (hud == null || target == null) return;
+
+        // Si el prefab tiene CombatantHUD, usamos su API fuertemente tipada.
+        var comp = hud.GetComponentInChildren<CombatantHUD>(true);
+        if (comp != null)
         {
-            Debug.LogWarning("[Encounter] No se asignó 'combatantHudPrefab'. No se mostrarán HUDs.");
+            // Importante: dejar el HUD en la raíz (no como hijo) para que su propio seguimiento
+            // gestione la posición en LateUpdate sin heredar escala del Pokémon.
+            hud.transform.SetParent(null, true);
+            comp.Bind(target, model, Camera.main);
             return;
         }
 
-        Camera cam = Camera.main;
+        // Fallback genérico (si tu prefab no usa CombatantHUD).
+        hud.transform.SetParent(target, false);
+        hud.transform.localPosition = hudOffset;
 
-        playerHudGO = Instantiate(combatantHudPrefab);
-        var hudP = playerHudGO.GetComponent<CombatantHUD>();
-        if (hudP) hudP.Bind(playerMonTf, playerModel, cam);
-
-        enemyHudGO = Instantiate(combatantHudPrefab);
-        var hudE = enemyHudGO.GetComponent<CombatantHUD>();
-        if (hudE) hudE.Bind(wildMonTf, wildModel, cam);
+        var cam = Camera.main;
+        hud.SendMessage("SetModel", model, SendMessageOptions.DontRequireReceiver);
+        hud.SendMessage("SetTarget", target, SendMessageOptions.DontRequireReceiver);
+        hud.SendMessage("SetIsPlayer", isPlayer, SendMessageOptions.DontRequireReceiver);
+        hud.SendMessage("SetCamera", cam, SendMessageOptions.DontRequireReceiver);
+        hud.SendMessage("SetOffset", hudOffset, SendMessageOptions.DontRequireReceiver);
+        hud.SendMessage("Refresh", SendMessageOptions.DontRequireReceiver);
     }
 }
 
-public enum EncounterResult { PlayerFainted, EnemyFainted, Capture, Run, ForcedEnd }
-
-internal static class Vec2Ext
+public enum EncounterResult
 {
-    public static bool Equals2D(this Vector2 a, Vector3 b, float tol)
-    {
-        float dx = a.x - b.x;
-        float dz = a.y - b.z;
-        return (dx * dx + dz * dz) <= tol * tol;
-    }
+    PlayerFainted,
+    EnemyFainted,
+    Capture,
+    Run,
+    ForcedEnd
 }

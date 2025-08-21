@@ -16,23 +16,14 @@ public class TurnController : MonoBehaviour
     private bool queuedCapture = false;
     private PokemonInstance queuedSwitchIn = null;
 
-    // Completar turno externamente (fallo de captura, etc.)
+    // Completar turno externamente (si lo necesitas en el futuro)
     private bool externalTurnComplete = false;
-
-    // Callback de fin de combate (inyectado por EncounterController)
-    private Action<EncounterResult> onEndEncounter;
 
     // --------- Setup ---------
     public void Setup(CombatantController playerCombatant, CombatantController enemyCombatant)
     {
-        Setup(playerCombatant, enemyCombatant, null);
-    }
-
-    public void Setup(CombatantController playerCombatant, CombatantController enemyCombatant, Action<EncounterResult> onEnd)
-    {
         player = playerCombatant;
         enemy = enemyCombatant;
-        onEndEncounter = onEnd;
         ClearQueued();
     }
 
@@ -48,13 +39,13 @@ public class TurnController : MonoBehaviour
     {
         OnPlayerTurnStart?.Invoke();
 
-        // Espera a que la UI encole una acción o a que se complete externamente (p.ej. fallo de captura)
+        // Espera a que la UI encole una acción o a que se complete externamente
         while (!queuedPlayerMoveIndex.HasValue && !queuedRun && !queuedCapture && queuedSwitchIn == null && !externalTurnComplete)
             yield return null;
 
         if (externalTurnComplete)
         {
-            Debug.Log("[TurnController] Turno del jugador consumido externamente (p.ej., fallo de captura).");
+            Debug.Log("[TurnController] Turno del jugador consumido externamente.");
             ClearQueued();
             yield break; // pasa a turno enemigo
         }
@@ -63,14 +54,14 @@ public class TurnController : MonoBehaviour
         {
             Debug.Log("[TurnController] El jugador eligió Huir.");
             ClearQueued();
-            onEndEncounter?.Invoke(EncounterResult.Run);
+            CombatService.Instance?.ForceEndEncounter(); // cerramos el combate directamente
             yield break;
         }
 
         if (queuedCapture)
         {
-            // Compatibilidad si alguien siguiera usando este flujo: consumimos turno
-            Debug.Log("[TurnController] El jugador eligió Capturar (flujo legacy): se consume turno.");
+            // Flujo legacy: si alguien lo usa, consume el turno
+            Debug.Log("[TurnController] El jugador eligió Capturar (legacy): se consume turno.");
             ClearQueued();
             yield return new WaitForSeconds(0.2f);
             yield break;

@@ -1,127 +1,131 @@
 ﻿using UnityEngine;
 
-/// Punto de entrada del combate. Instancia EncounterController y activa/desactiva la UI de combate.
+/// Servicio central del combate. Instancia EncounterController y expone utilidades
+/// de ciclo de vida + señales usadas por la Pokéball durante las capturas.
 public class CombatService : MonoBehaviour
 {
     public static CombatService Instance { get; private set; }
 
     [Header("Prefabs/Refs")]
     [SerializeField] private GameObject encounterPrefab; // Prefab con EncounterController
-    [Tooltip("Canvas raíz que contiene CombatUIController (así lo activamos al entrar en combate).")]
-    [SerializeField] private GameObject combatUIRoot;
 
-    [Header("Config por defecto para cada encuentro")]
-    [SerializeField] private float defaultOffsetFromCenter = 2.5f;
-    [SerializeField] private float defaultPlayerRingRadius = 10f;
+    [Header("Config por defecto (se aplica a cada combate)")]
+    [SerializeField] private float defaultOffsetFromCenter = 2.5f;   // distancia desde el centro a cada pokémon
+    [SerializeField] private float defaultPlayerRingRadius = 10f;    // radio máximo para que el jugador se aleje del centro
 
     private EncounterController activeEncounter;
-
-    // --- Control de captura por turno ---
-    private bool captureAttemptActive = false;
-
-    public bool IsInBattle => activeEncounter != null;
-    public bool IsInEncounter => activeEncounter != null;
-    public EncounterController ActiveEncounter => activeEncounter;
+    private bool captureInProgress = false;
 
     private void Awake()
     {
-        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
         Instance = this;
         DontDestroyOnLoad(gameObject);
     }
 
-    /// Arranca un encuentro 1v1 entre el pokémon del jugador y uno salvaje.
+    public bool IsInEncounter => activeEncounter != null;
+
+    /// <summary>Arranca un combate. Llamar al colisionar tu Pokémon con un salvaje.</summary>
     public void StartEncounter(Transform playerMonTf, PokemonInstance playerMon,
                                Transform wildMonTf, PokemonInstance wildMon)
     {
-        if (IsInEncounter)
-        {
-            Debug.LogWarning("[CombatService] Ya hay un combate activo.");
-            return;
-        }
-
+        if (IsInEncounter || playerMon == null || wildMon == null) return;
         if (encounterPrefab == null)
         {
             Debug.LogError("[CombatService] Falta encounterPrefab.");
             return;
         }
 
-        // Instanciar Encounter
         var go = Instantiate(encounterPrefab);
-        var enc = go.GetComponent<EncounterController>();
-        if (!enc)
-        {
-            Debug.LogError("[CombatService] El prefab no contiene EncounterController.");
-            Destroy(go);
-            return;
-        }
+        activeEncounter = go.GetComponent<EncounterController>();
+        if (!activeEncounter) activeEncounter = go.AddComponent<EncounterController>();
 
-        activeEncounter = enc;
-
-        // Aplicar la config por defecto
+        // aplicar configuración en runtime (sobrescribe lo que tenga el prefab)
         activeEncounter.ApplyConfig(defaultOffsetFromCenter, defaultPlayerRingRadius);
 
-        // Asegurar UI activa ANTES de iniciar, para que CombatUIController se inicialice
-        if (combatUIRoot != null && !combatUIRoot.activeSelf)
-            combatUIRoot.SetActive(true);
+        // Forzar ItemSelector a modo Pokéballs y bloquear alternancia (Q) durante TODO el combate
+        var selector = FindAnyObjectByType<ItemSelectorUI>();
+        if (selector != null)
+        {
+            selector.SetCaptureLock(true);                    // deshabilita Q
+            selector.SetMode(SelectorMode.Pokeball);          // fuerza modo balls
+            selector.RefreshBalls();                          // refresca conteo/iconos
+        }
 
-        // Comenzar el encuentro
+        // Reset banderas de captura
+        captureInProgress = false;
+
+        // Comienza encuentro; al terminar, restauramos estado de UI y controles
         activeEncounter.Begin(playerMonTf, playerMon, wildMonTf, wildMon, onEnd: () =>
         {
-            // Al terminar, ocultamos la UI y limpiamos referencia/flags
-            if (combatUIRoot != null && combatUIRoot.activeSelf)
-                combatUIRoot.SetActive(false);
-
-            captureAttemptActive = false;
+            selector?.SetCaptureLock(false);                  // vuelve a comportamiento normal
+            captureInProgress = false;
             activeEncounter = null;
+
+            // Rehabilitar control del jugador y cursor de gameplay
+            RestorePlayerControls();
         });
     }
 
-    /// Fuerza finalizar el combate activo (por ejemplo, al cargar escena).
+    /// <summary>Fuerza finalizar el combate activo (por ejemplo, al huir o al cargar escena).</summary>
     public void ForceEndEncounter()
     {
-        if (!activeEncounter) return;
+        if (!activeEncounter) { RestorePlayerControls(); return; }
 
         activeEncounter.ForceEnd();
-
-        if (combatUIRoot != null && combatUIRoot.activeSelf)
-            combatUIRoot.SetActive(false);
-
-        captureAttemptActive = false;
         activeEncounter = null;
+        captureInProgress = false;
+
+        var selector = FindAnyObjectByType<ItemSelectorUI>();
+        selector?.SetCaptureLock(false);
+
+        // Asegura que el jugador vuelve a tener control tras salir
+        RestorePlayerControls();
     }
 
-    // =======================
-    // Capture flow helpers
-    // =======================
+    // -------------------- Señales usadas por la Pokéball --------------------
 
-    /// Llamar desde la Pokéball al lanzarse. Devuelve false si NO se permite (ya hay un intento en curso).
+    /// <summary>
+    /// Marca el inicio de un intento de captura. Devuelve false si no es válido
+    /// (no hay combate activo o ya hay un intento en progreso).
+    /// </summary>
     public bool BeginCaptureAttempt()
     {
-        if (!IsInEncounter) return true; // fuera de combate no nos metemos
-        if (captureAttemptActive) return false;
-        captureAttemptActive = true;
+        if (!IsInEncounter) return false;
+        if (captureInProgress) return false;
+        captureInProgress = true;
         return true;
     }
 
-    /// Llamar cuando la captura termine con ÉXITO.
+    /// <summary>Llamar cuando la captura ha tenido éxito.</summary>
     public void NotifyCaptureSuccess()
     {
-        if (!activeEncounter) { captureAttemptActive = false; return; }
-        captureAttemptActive = false;
-        activeEncounter.EndByCapture();
+        if (!IsInEncounter) return;
+        captureInProgress = false;
+        // Cerrar combate con resultado "Capture".
+        activeEncounter.NotifyCaptureSuccess();
     }
 
-    /// Llamar cuando la captura termine con FALLO. Consume el turno del jugador.
+    /// <summary>Llamar cuando la captura ha fallado. Consume el turno del jugador.</summary>
     public void NotifyCaptureFailed()
     {
-        if (!activeEncounter) { captureAttemptActive = false; return; }
-        captureAttemptActive = false;
+        if (!IsInEncounter) return;
+        captureInProgress = false;
+        activeEncounter.NotifyCaptureFailed();
+    }
 
-        var tc = activeEncounter.TurnController;
-        if (tc != null)
-            tc.ConsumePlayerTurn(); // pasa al turno del enemigo
+    // -------------------- Utilidades privadas --------------------
+    private static void RestorePlayerControls()
+    {
+        var pc = FindAnyObjectByType<PlayerController>();
+        if (pc != null) pc.EnableControls(true);
 
-        // La UI de combate ya está oculta en modo captura; los controles siguen bloqueados por Encounter.
+        // Cursor a modo gameplay (bloqueado y oculto)
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
     }
 }
