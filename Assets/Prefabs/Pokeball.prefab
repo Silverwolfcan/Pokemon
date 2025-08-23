@@ -272,4 +272,4 @@ MonoBehaviour:
     m_Bits: 64
   groundRestOffset: 0.1
   traceRadius: 0.12
-  baseArcHeight: 2
+  baseArcHeight: 0.5

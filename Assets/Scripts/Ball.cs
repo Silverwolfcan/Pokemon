@@ -1,13 +1,6 @@
 using System.Collections;
 using UnityEngine;
 
-/// Pokéball:
-/// 1) Vuelo por Bezier (kinemática) con SphereCast de impacto.
-/// 2) Al terminar el arco o tocar suelo, activa física real (Rigidbody+gravedad).
-/// 3) Al impactar un salvaje, congela la física, posa sobre el suelo y ejecuta animación de sacudidas.
-/// 4) Refresca ItemSelectorUI y notifica a CombatService en éxito/fracaso.
-/// 5) Fuerza 1 intento de captura por turno en combate.
-/// 6) En fallo de captura, reanuda el comportamiento del salvaje y la bola desaparece inmediatamente.
 [RequireComponent(typeof(Rigidbody))]
 public class Ball : MonoBehaviour
 {
@@ -78,7 +71,7 @@ public class Ball : MonoBehaviour
         controlPoint = mid + Vector3.up * arc + side * lateral;
 
         // Duración proporcional a la distancia → vuelo más natural
-        duration = Mathf.Clamp(dist / 10f, 0.6f, 1.4f);
+        duration = Mathf.Clamp(dist / 20f, 0.6f, 1.4f);  //Valor base de la velocidad 10f, subir para que viaje mas rapido.
         timer = 0f;
 
         // Seguridad por si queda suelta
