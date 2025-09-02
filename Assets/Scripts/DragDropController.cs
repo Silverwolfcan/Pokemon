@@ -14,22 +14,19 @@ public class DragDropController : MonoBehaviour
 
     [Header("Reglas")]
     public bool enforceMinPartyOne = true;
-    public int minPartyCount = 1;
 
-    // Estado del drag (se mantiene aunque cambies de página)
-    private IPokemonStorage srcStorage;
-    private int srcIndex = -1;
-    private StorageGridUI srcGridForRefresh;
-    private bool srcIsParty = false;
-
-    private StorageSlotUI draggingFrom;
-
-    // Ghost
     private GameObject dragGhost;
     private RectTransform dragGhostRT;
     private Canvas targetCanvas;
 
-    public static bool IsDraggingAny { get; private set; }
+    private IPokemonStorage srcStorage;
+    private int srcIndex = -1;
+    private StorageGridUI srcGridForRefresh;
+    private bool srcIsParty;
+
+    private StorageSlotUI draggingFrom;
+
+    public bool IsDraggingAny { get; private set; }
 
     private void Awake()
     {
@@ -78,10 +75,8 @@ public class DragDropController : MonoBehaviour
                 }
             }
 
-            // Si no hay ningún slot bajo el ratón, cancelamos solo lo visual
-            DestroyGhost();
-            draggingFrom = null;
-            IsDraggingAny = false;
+            // Si no hay destino válido, sólo finalizamos sin mover nada
+            CleanupAfterOperation(null);
         }
     }
 
@@ -145,7 +140,6 @@ public class DragDropController : MonoBehaviour
     {
         // NO apagamos IsDraggingAny: dejemos que Update resuelva el drop manual
         DestroyGhost();
-        draggingFrom = null;
     }
 
     public void HandleDrop(StorageSlotUI target, PointerEventData ev)
@@ -164,32 +158,30 @@ public class DragDropController : MonoBehaviour
         if (enforceMinPartyOne && srcIsParty && !ReferenceEquals(srcStorage, dstStorage))
         {
             var party = (PokemonParty)srcStorage;
-            int nonNull = party.CountNonNull;
-            bool destOccupied = dstStorage.GetAt(dstIndex) != null;
-            if (nonNull <= minPartyCount && !destOccupied)
+            // Si en origen sólo quedaría 0 tras mover (srcIndex tiene el único Pokémon), bloquear.
+            int count = 0;
+            for (int i = 0; i < party.MaxCapacity; i++) if (party.GetAt(i) != null) count++;
+            if (count <= 1 && dstStorage.GetAt(dstIndex) == null)
             {
                 CleanupAfterOperation(dstGrid);
                 return;
             }
         }
 
-        // MISMO STORAGE → swap
+        // MISMO STORAGE → swap o mover dentro
         if (ReferenceEquals(srcStorage, dstStorage))
         {
             if (srcIndex != dstIndex)
             {
-                if (srcStorage is PokemonParty party) party.Swap(srcIndex, dstIndex);
-                else if (srcStorage is PCBox box) box.Swap(srcIndex, dstIndex);
-                else
-                {
-                    var a = srcStorage.GetAt(srcIndex);
-                    var b = srcStorage.GetAt(dstIndex);
-                    srcStorage.TryInsertAt(dstIndex, a, out _);
-                    srcStorage.TryInsertAt(srcIndex, b, out _);
-                }
+                // Swap
+                var a = srcStorage.GetAt(srcIndex);
+                var b = srcStorage.GetAt(dstIndex);
+                srcStorage.TryInsertAt(dstIndex, a, out _);
+                srcStorage.TryInsertAt(srcIndex, b, out _);
             }
 
             RefreshGrids(srcGridForRefresh, dstGrid);
+            StartCoroutine(SelectDestinationAfterRefresh(dstGrid, dstIndex));
             FinalizeDrop();
             return;
         }
@@ -199,6 +191,7 @@ public class DragDropController : MonoBehaviour
         if (moving == null)
         {
             RefreshGrids(srcGridForRefresh, dstGrid);
+            StartCoroutine(SelectDestinationAfterRefresh(dstGrid, dstIndex));
             FinalizeDrop();
             return;
         }
@@ -208,6 +201,7 @@ public class DragDropController : MonoBehaviour
             // Revertir si no cupo
             srcStorage.TryInsertAt(srcIndex, moving, out _);
             RefreshGrids(srcGridForRefresh, dstGrid);
+            StartCoroutine(SelectDestinationAfterRefresh(dstGrid, dstIndex));
             FinalizeDrop();
             return;
         }
@@ -217,6 +211,7 @@ public class DragDropController : MonoBehaviour
             srcStorage.TryInsertAt(srcIndex, displaced, out _);
 
         RefreshGrids(srcGridForRefresh, dstGrid);
+        StartCoroutine(SelectDestinationAfterRefresh(dstGrid, dstIndex));
         FinalizeDrop();
     }
 
@@ -259,6 +254,22 @@ public class DragDropController : MonoBehaviour
         srcIndex = -1;
         srcGridForRefresh = null;
         srcIsParty = false;
+    }
+
+    // Selección diferida del destino tras el refresh de los grids
+    private System.Collections.IEnumerator SelectDestinationAfterRefresh(StorageGridUI dstGrid, int dstIndex)
+    {
+        yield return null;
+        if (dstGrid == null) yield break;
+
+        var slots = dstGrid.GetComponentsInChildren<StorageSlotUI>(true);
+        if (dstIndex >= 0 && dstIndex < slots.Length && slots[dstIndex] != null)
+        {
+            StorageSlotUI.ClearGlobalSelectionVisuals();
+            var es = EventSystem.current;
+            var ped = es != null ? new PointerEventData(es) : null;
+            slots[dstIndex].OnPointerClick(ped); // Simulamos click → selecciona y notifica stats/moves
+        }
     }
 
     private void CleanupAfterOperation(StorageGridUI dstGrid)

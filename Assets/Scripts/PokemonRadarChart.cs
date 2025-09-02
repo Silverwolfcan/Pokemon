@@ -7,10 +7,10 @@ public class PokemonRadarChart : Graphic
 {
     // ----- DATOS -----
     [Header("Valores (actuales)")]
-    public float HP = 394f, Attack = 251f, Defense = 251f, Speed = 240f, SpDefense = 394f, SpAttack = 350f;
+    public float HP = 394f, Attack = 251f, Defense = 251f, SpAttack = 350f, SpDefense = 394f, Speed = 240f;
 
     [Header("Valores máximos (normalización)")]
-    public float MaxHP = 500f, MaxAttack = 400f, MaxDefense = 400f, MaxSpeed = 400f, MaxSpDefense = 400f, MaxSpAttack = 400f;
+    public float MaxHP = 500f, MaxAttack = 400f, MaxDefense = 400f, MaxSpAttack = 400f, MaxSpDefense = 400f, MaxSpeed = 400f;
 
     // ----- ESTILO Y GEOMETRÍA -----
     [Header("Geometría")]
@@ -66,17 +66,17 @@ public class PokemonRadarChart : Graphic
         new Color(0.31f,0.87f,0.35f,1f), // HP
         new Color(1f,0.86f,0.35f,1f),    // Attack
         new Color(1f,0.62f,0.29f,1f),    // Defense
-        new Color(1f,0.42f,0.74f,1f),    // Speed
-        new Color(0.45f,0.72f,1f,1f),    // SpDef
         new Color(0.32f,0.82f,0.98f,1f), // SpAtk
+        new Color(0.45f,0.72f,1f,1f),    // SpDef
+        new Color(1f,0.42f,0.74f,1f),    // Speed
     };
 
     // ----- AUTO-ETIQUETAS (TMP) -----
     [Header("Auto-etiquetas TMP (opcional)")]
     public bool autoPlaceLabels = true;
-    public TMP_Text[] labels = new TMP_Text[6]; // HP, Attack, Defense, Speed, SpDef, SpAtk
+    public TMP_Text[] labels = new TMP_Text[6]; // HP, Atk, Def, SpAtk, SpDef, Speed
     public float labelPadding = 18f;
-    public string[] labelNames = { "HP", "Attack", "Defense", "Speed", "Sp.Def", "Sp.Atk" };
+    public string[] labelNames = { "HP", "Attack", "Defense", "Sp.Atk", "Sp.Def", "Speed" };
     public bool showValuesInLabels = true;
     public string labelTemplate = "{name}\n{value}";
     public string numberFormat = "0";
@@ -89,9 +89,9 @@ public class PokemonRadarChart : Graphic
         MaxHP = Mathf.Max(0.0001f, MaxHP);
         MaxAttack = Mathf.Max(0.0001f, MaxAttack);
         MaxDefense = Mathf.Max(0.0001f, MaxDefense);
-        MaxSpeed = Mathf.Max(0.0001f, MaxSpeed);
-        MaxSpDefense = Mathf.Max(0.0001f, MaxSpDefense);
         MaxSpAttack = Mathf.Max(0.0001f, MaxSpAttack);
+        MaxSpDefense = Mathf.Max(0.0001f, MaxSpDefense);
+        MaxSpeed = Mathf.Max(0.0001f, MaxSpeed);
         if (fillColor.a < 1f) fillColor.a = 1f;
         SetVerticesDirty();
     }
@@ -102,7 +102,7 @@ public class PokemonRadarChart : Graphic
         System.Random rng = new System.Random();
         float R(float max) => (float)(rng.NextDouble() * max * 0.95 + max * 0.05);
         HP = R(MaxHP); Attack = R(MaxAttack); Defense = R(MaxDefense);
-        Speed = R(MaxSpeed); SpDefense = R(MaxSpDefense); SpAttack = R(MaxSpAttack);
+        SpAttack = R(MaxSpAttack); SpDefense = R(MaxSpDefense); Speed = R(MaxSpeed);
         SetVerticesDirty();
     }
 
@@ -134,7 +134,7 @@ public class PokemonRadarChart : Graphic
             ringMax[i] = center + dirs[i] * maxR;
         }
 
-        // 1) Dibujos de fondo (grid, ejes, contorno exterior)
+        // 1) Fondo (rejilla/ejes/borde)
         if (gridRings > 0 && gridThickness > 0.01f)
         {
             for (int r = 1; r <= gridRings; r++)
@@ -169,9 +169,9 @@ public class PokemonRadarChart : Graphic
         if (drawMaxBackground)
             AddFilledPolygon(vh, ringMax, Mult(maxRingFillColor, color));
 
-        // 2) Polígono de valores (opaco) + contorno
-        float[] vals = { HP, Attack, Defense, Speed, SpDefense, SpAttack };
-        float[] maxs = { MaxHP, MaxAttack, MaxDefense, MaxSpeed, MaxSpDefense, MaxSpAttack };
+        // 2) Polígono de valores
+        float[] vals = { HP, Attack, Defense, SpAttack, SpDefense, Speed };
+        float[] maxs = { MaxHP, MaxAttack, MaxDefense, MaxSpAttack, MaxSpDefense, MaxSpeed };
 
         Vector2[] ringValue = new Vector2[N];
         for (int i = 0; i < N; i++)
@@ -192,7 +192,7 @@ public class PokemonRadarChart : Graphic
             }
         }
 
-        // 3) Marcadores (triángulos con vértices redondeados o puntos)
+        // 3) Marcadores
         if (drawMarkers)
         {
             for (int i = 0; i < N; i++)
@@ -202,7 +202,7 @@ public class PokemonRadarChart : Graphic
                 {
                     AddCircleMarker(vh, center + dirs[i] * (maxR + markerOffset + markerSize * 0.5f), markerSize * 0.5f, 12, mc);
                 }
-                else // Triangle (con o sin redondeo)
+                else
                 {
                     AddRoundedTriangleMarker(
                         vh, center, dirs[i], maxR,
@@ -223,7 +223,7 @@ public class PokemonRadarChart : Graphic
         float step = Mathf.PI * 2f / 6f;
         float start = startAngleDeg * Mathf.Deg2Rad;
 
-        float[] vals = { HP, Attack, Defense, Speed, SpDefense, SpAttack };
+        float[] vals = { HP, Attack, Defense, SpAttack, SpDefense, Speed };
 
         for (int i = 0; i < 6; i++)
         {
@@ -323,8 +323,6 @@ public class PokemonRadarChart : Graphic
     }
 
     // ---- Marcadores ----
-
-    // Triángulo con esquinas redondeadas (aproximación por arcos)
     static void AddRoundedTriangleMarker(
         VertexHelper vh, Vector2 center, Vector2 dir, float baseRadius,
         float offsetOut, float height, float baseWidth,
@@ -338,7 +336,6 @@ public class PokemonRadarChart : Graphic
 
         if (cornerRadius <= 0.0001f || cornerSegments < 1)
         {
-            // Triángulo normal
             int i0 = vh.currentVertCount;
             vh.AddVert(tip, col, Vector2.zero);
             vh.AddVert(bl, col, Vector2.zero);
@@ -347,30 +344,26 @@ public class PokemonRadarChart : Graphic
             return;
         }
 
-        // Polígono base en orden (CCW): bl -> tip -> br
         Vector2[] poly = new Vector2[] { bl, tip, br };
 
-        // Genera puntos con arcos en cada esquina
         System.Collections.Generic.List<Vector2> pts = new System.Collections.Generic.List<Vector2>(3 * (cornerSegments + 1));
         for (int i = 0; i < 3; i++)
         {
             Vector2 C = poly[i];
-            Vector2 Pp = poly[(i + 2) % 3]; // prev
-            Vector2 Pn = poly[(i + 1) % 3]; // next
+            Vector2 Pp = poly[(i + 2) % 3];
+            Vector2 Pn = poly[(i + 1) % 3];
 
             Vector2 d1 = (Pp - C);
             Vector2 d2 = (Pn - C);
             float len1 = d1.magnitude;
             float len2 = d2.magnitude;
 
-            if (len1 < 1e-4f || len2 < 1e-4f)
-                continue;
+            if (len1 < 1e-4f || len2 < 1e-4f) continue;
 
             d1 /= len1; d2 /= len2;
 
             float r = Mathf.Min(cornerRadius, 0.49f * Mathf.Min(len1, len2));
 
-            // puntos de inicio/fin del arco
             Vector2 pStart = C + d1 * r;
             Vector2 pEnd = C + d2 * r;
 
@@ -386,7 +379,6 @@ public class PokemonRadarChart : Graphic
             }
         }
 
-        // Triangulación por "fan" desde el centroide del polígono redondeado
         Vector2 centroid = Vector2.zero;
         for (int i = 0; i < pts.Count; i++) centroid += pts[i];
         centroid /= Mathf.Max(1, pts.Count);

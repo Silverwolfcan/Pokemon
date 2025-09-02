@@ -15,6 +15,7 @@ MonoBehaviour:
   itemName: Ultra Ball
   icon: {fileID: 767120296, guid: fec9c10a41208a8418e4acec025bf369, type: 3}
   category: 0
-  description: 
+  description: "Pok\xE9 Ball  de rendimiento superior. Tinee un \xEDndice de \xE9xito
+    mayor al de la Super Ball."
   catchMultiplier: 2
   unlockedByDefault: 1

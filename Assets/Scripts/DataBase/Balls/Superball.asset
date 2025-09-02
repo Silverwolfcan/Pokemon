@@ -15,6 +15,7 @@ MonoBehaviour:
   itemName: Super Ball
   icon: {fileID: -139682062, guid: fec9c10a41208a8418e4acec025bf369, type: 3}
   category: 0
-  description: 
+  description: "Pok\xE9 Ball de alto rendimiento. Tiene un \xEDndice de \xE9xito
+    superior al de la Pok\xE9 Ball."
   catchMultiplier: 1.5
   unlockedByDefault: 1

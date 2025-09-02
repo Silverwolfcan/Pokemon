@@ -15,6 +15,7 @@ MonoBehaviour:
   itemName: "Pok\xE9 Ball"
   icon: {fileID: -1997047358, guid: fec9c10a41208a8418e4acec025bf369, type: 3}
   category: 0
-  description: 
-  catchMultiplier: 0.1
+  description: "Dispositivo con dise\xF1o capsular que atrapa Pok\xE9mon salvajes.
+    Se lanza como una bola contra el blanco."
+  catchMultiplier: 1
   unlockedByDefault: 1

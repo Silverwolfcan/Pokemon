@@ -40,13 +40,21 @@ public struct EVs
     public int Total => HP + Attack + Defense + SpAttack + SpDefense + Speed;
     public void ClampTotals()
     {
-        HP = Mathf.Clamp(HP, 0, 252); Attack = Mathf.Clamp(Attack, 0, 252); Defense = Mathf.Clamp(Defense, 0, 252);
-        SpAttack = Mathf.Clamp(SpAttack, 0, 252); SpDefense = Mathf.Clamp(SpDefense, 0, 252); Speed = Mathf.Clamp(Speed, 0, 252);
+        HP = Mathf.Clamp(HP, 0, 252);
+        Attack = Mathf.Clamp(Attack, 0, 252);
+        Defense = Mathf.Clamp(Defense, 0, 252);
+        SpAttack = Mathf.Clamp(SpAttack, 0, 252);
+        SpDefense = Mathf.Clamp(SpDefense, 0, 252);
+        Speed = Mathf.Clamp(Speed, 0, 252);
         int overflow = Mathf.Max(0, Total - 510);
         if (overflow > 0)
         {
-            Reduce(ref Speed, ref overflow); Reduce(ref SpDefense, ref overflow); Reduce(ref SpAttack, ref overflow);
-            Reduce(ref Defense, ref overflow); Reduce(ref Attack, ref overflow); Reduce(ref HP, ref overflow);
+            Reduce(ref Speed, ref overflow);
+            Reduce(ref SpDefense, ref overflow);
+            Reduce(ref SpAttack, ref overflow);
+            Reduce(ref Defense, ref overflow);
+            Reduce(ref Attack, ref overflow);
+            Reduce(ref HP, ref overflow);
         }
         static void Reduce(ref int s, ref int o) { if (o <= 0) return; int r = Mathf.Min(s, o); s -= r; o -= r; }
     }
@@ -67,32 +75,74 @@ public class MoveInstance
 [Serializable]
 public class PokemonInstance : ISerializationCallbackReceiver
 {
+    // ---------------- Identity ----------------
     [Header("Identity")]
     [SerializeField] private string uniqueID;
     public string UniqueID => uniqueID;
 
-    [Tooltip("Datos base de la especie")] public PokemonData species;
+    [Tooltip("Datos base de la especie")]
+    public PokemonData species;
 
+    [Tooltip("Apodo opcional mostrado en la UI si no está vacío")]
+    public string nickname;
+
+    /// Nombre a mostrar en UI (nick > displayName > pokemonName)
+    public string DisplayName
+        => !string.IsNullOrWhiteSpace(nickname)
+            ? nickname
+            : (species?.displayName ?? species?.pokemonName ?? string.Empty);
+
+    // ---------------- Main ----------------
     [Header("Main")]
     public int level = 1;
     public Gender gender = Gender.Unknown;
     public bool isShiny = false;
     public Nature nature = Nature.Hardy;
 
+    // ---------------- Stats ----------------
     [Header("Stats")]
     public IVs ivs = IVs.RandomIVs();
     public EVs evs;
     public PokemonStats stats;
     public int currentHP;
 
-    [Header("Progression")] public int currentExp;
+    // ---------------- Progression ----------------
+    [Header("Progression")]
+    public int currentExp;
 
+    // ---------------- Abilities & Moves ----------------
     [Header("Abilities & Moves")]
     public AbilityData ability;
 
     [SerializeField] private List<MoveInstance> moves = new List<MoveInstance>(4);
     public IReadOnlyList<MoveInstance> Moves => moves;
 
+    // ---------------- Held Item ----------------
+    [Header("Objeto equipado")]
+    [SerializeField] private ItemData heldItem;
+    public ItemData HeldItem => heldItem;
+    public bool HasHeldItem => heldItem != null;
+
+    /// <summary>Equipa un objeto y devuelve el que tenía antes (si había).</summary>
+    public ItemData EquipItem(ItemData newItem)
+    {
+        var previous = heldItem;
+        heldItem = newItem;
+        return previous;
+    }
+
+    /// <summary>Quita y devuelve el objeto equipado (si había).</summary>
+    public ItemData TakeHeldItem()
+    {
+        var prev = heldItem;
+        heldItem = null;
+        return prev;
+    }
+
+    /// <summary>Quita el objeto equipado sin devolverlo.</summary>
+    public void ClearHeldItem() => heldItem = null;
+
+    // ---------------- Origin / Misc ----------------
     [Header("Origin / Misc")]
     public string originalTrainerName;
     public int originalTrainerID;
@@ -100,9 +150,16 @@ public class PokemonInstance : ISerializationCallbackReceiver
     public int metLevel;
     public string pokeballName;
 
+    // ---------------- Ctors ----------------
     public PokemonInstance() { uniqueID = Guid.NewGuid().ToString(); }
 
-    public PokemonInstance(PokemonData species, int level, Gender gender = Gender.Unknown, bool isShiny = false, Nature? forcedNature = null, AbilityData forcedAbility = null)
+    public PokemonInstance(
+        PokemonData species,
+        int level,
+        Gender gender = Gender.Unknown,
+        bool isShiny = false,
+        Nature? forcedNature = null,
+        AbilityData forcedAbility = null)
         : this()
     {
         this.species = species;
@@ -134,6 +191,7 @@ public class PokemonInstance : ISerializationCallbackReceiver
         }
     }
 
+    // ---------------- Stats calc ----------------
     public void RecalculateStats()
     {
         stats = new PokemonStats
@@ -148,7 +206,11 @@ public class PokemonInstance : ISerializationCallbackReceiver
         currentHP = Mathf.Clamp(currentHP, 0, stats.MaxHP);
     }
 
-    public void HealAll() { currentHP = stats.MaxHP; foreach (var m in moves) m?.RestoreAllPP(); }
+    public void HealAll()
+    {
+        currentHP = stats.MaxHP;
+        foreach (var m in moves) m?.RestoreAllPP();
+    }
 
     public void AddExp(int amount)
     {
@@ -168,30 +230,59 @@ public class PokemonInstance : ISerializationCallbackReceiver
     public void ApplyEVGain(int hp = 0, int atk = 0, int def = 0, int spa = 0, int spd = 0, int spe = 0)
     {
         evs.HP += hp; evs.Attack += atk; evs.Defense += def; evs.SpAttack += spa; evs.SpDefense += spd; evs.Speed += spe;
-        evs.ClampTotals(); RecalculateStats();
+        evs.ClampTotals();
+        RecalculateStats();
     }
 
+    // ---------------- Moves ----------------
     public bool LearnMove(MoveData moveData, int replaceIndex = -1)
     {
         if (moveData == null) return false;
-        for (int i = 0; i < moves.Count; i++) if (moves[i] != null && moves[i].data == moveData) return false;
-        for (int i = 0; i < 4; i++) { if (i >= moves.Count) moves.Add(null); if (moves[i] == null) { moves[i] = new MoveInstance(moveData); CompactMoves(); return true; } }
-        if (replaceIndex >= 0 && replaceIndex < 4) { moves[replaceIndex] = new MoveInstance(moveData); CompactMoves(); return true; }
+        for (int i = 0; i < moves.Count; i++)
+            if (moves[i] != null && moves[i].data == moveData) return false;
+
+        for (int i = 0; i < 4; i++)
+        {
+            if (i >= moves.Count) moves.Add(null);
+            if (moves[i] == null)
+            {
+                moves[i] = new MoveInstance(moveData);
+                CompactMoves();
+                return true;
+            }
+        }
+
+        if (replaceIndex >= 0 && replaceIndex < 4)
+        {
+            moves[replaceIndex] = new MoveInstance(moveData);
+            CompactMoves();
+            return true;
+        }
         return false;
     }
 
-    public void ForgetMoveAt(int index) { if (index < 0 || index >= 4) return; while (moves.Count < 4) moves.Add(null); moves[index] = null; CompactMoves(); }
-    public void SetMoveAt(int index, MoveInstance move) { if (index < 0 || index >= 4) return; while (moves.Count < 4) moves.Add(null); moves[index] = move; CompactMoves(); }
+    public void ForgetMoveAt(int index)
+    {
+        if (index < 0 || index >= 4) return;
+        while (moves.Count < 4) moves.Add(null);
+        moves[index] = null;
+        CompactMoves();
+    }
+
+    public void SetMoveAt(int index, MoveInstance move)
+    {
+        if (index < 0 || index >= 4) return;
+        while (moves.Count < 4) moves.Add(null);
+        moves[index] = move;
+        CompactMoves();
+    }
 
     public bool SwapMoves(int a, int b)
     {
         while (moves.Count < 4) moves.Add(null);
         if (a < 0 || a >= 4 || b < 0 || b >= 4 || a == b) return false;
-        var tmp = moves[a];
-        moves[a] = moves[b];
-        moves[b] = tmp;
-        CompactMoves();
-        return true;
+        var tmp = moves[a]; moves[a] = moves[b]; moves[b] = tmp;
+        CompactMoves(); return true;
     }
 
     public bool MoveMove(int from, int to)
@@ -200,6 +291,7 @@ public class PokemonInstance : ISerializationCallbackReceiver
         if (from < 0 || from >= 4 || to < 0 || to >= 4 || from == to) return false;
         var item = moves[from];
         if (item == null) return false;
+
         moves.RemoveAt(from);
         moves.Insert(to, item);
         while (moves.Count > 4) moves.RemoveAt(moves.Count - 1);
@@ -207,19 +299,17 @@ public class PokemonInstance : ISerializationCallbackReceiver
         return true;
     }
 
-    // === Compacta movimientos (no-nulos al principio, nulls al final). Normaliza MoveInstance sin data => null.
+    /// Compacta movimientos: no nulos al principio, nulos al final.
     public bool CompactMoves()
     {
         bool changed = false;
         if (moves == null) moves = new List<MoveInstance>(4);
 
+        // Normaliza entradas inválidas
         for (int i = 0; i < moves.Count; i++)
         {
             if (moves[i] != null && moves[i].data == null)
-            {
-                moves[i] = null;
-                changed = true;
-            }
+            { moves[i] = null; changed = true; }
         }
 
         while (moves.Count < 4) { moves.Add(null); changed = true; }
@@ -239,7 +329,6 @@ public class PokemonInstance : ISerializationCallbackReceiver
         return changed;
     }
 
-    // === NUEVO: helpers para garantizar movimientos aprendidos hasta el nivel actual ===
     public bool HasAnyMoveData()
     {
         if (moves == null || moves.Count == 0) return false;
@@ -249,7 +338,6 @@ public class PokemonInstance : ISerializationCallbackReceiver
     }
 
     /// Garantiza que, si no hay movimientos, se pueblen desde el learnset hasta el nivel actual.
-    /// Devuelve true si añadió alguno.
     public bool EnsureMovesForCurrentLevel()
     {
         if (HasAnyMoveData()) return false;
@@ -293,7 +381,12 @@ public class PokemonInstance : ISerializationCallbackReceiver
             if (entry.level == level) LearnMove(entry.attackData);
     }
 
-    private Nature RollNature() { Array values = Enum.GetValues(typeof(Nature)); return (Nature)values.GetValue(UnityEngine.Random.Range(0, values.Length)); }
+    private Nature RollNature()
+    {
+        Array values = Enum.GetValues(typeof(Nature));
+        return (Nature)values.GetValue(UnityEngine.Random.Range(0, values.Length));
+    }
+
     private AbilityData PickAbilityFromSpecies()
     {
         if (species == null || species.possibleAbilities == null || species.possibleAbilities.Length == 0) return null;
@@ -320,11 +413,11 @@ public class PokemonInstance : ISerializationCallbackReceiver
                 return Mathf.FloorToInt((lvl <= 50) ? (lvl * lvl * lvl * (100 - lvl)) / 50f
                                                      : (lvl <= 68) ? (lvl * lvl * lvl * (150 - lvl)) / 100f
                                                      : (lvl <= 98) ? (lvl * lvl * lvl * ((1911 - 10 * lvl) / 3f)) / 500f
-                                                               : (lvl * lvl * lvl * (160 - lvl)) / 100f);
+                                                                   : (lvl * lvl * lvl * (160 - lvl)) / 100f);
             case GrowthRateGroup.Fluctuating:
                 return Mathf.FloorToInt((lvl <= 15) ? (lvl * lvl * lvl * ((float)(24 + ((lvl + 1) / 3)))) / 50f
                                                      : (lvl <= 36) ? (lvl * lvl * lvl * ((float)(lvl + 14))) / 50f
-                                                               : (lvl * lvl * lvl * ((float)(lvl + 14))) / 50f);
+                                                                   : (lvl * lvl * lvl * ((float)(lvl + 14))) / 50f);
             default: return lvl * lvl * lvl;
         }
     }
@@ -364,29 +457,39 @@ public class PokemonInstance : ISerializationCallbackReceiver
     }
 
     private static int CalcHP(int baseStat, int iv, int ev, int level)
-    { int term = (2 * baseStat + iv + (ev / 4)); return Mathf.FloorToInt((term * level) / 100f) + level + 10; }
-    private static int CalcOther(int baseStat, int iv, int ev, int level, float natureMod)
-    { int term = (2 * baseStat + iv + (ev / 4)); int baseVal = Mathf.FloorToInt((term * level) / 100f) + 5; return Mathf.FloorToInt(baseVal * natureMod); }
+        => Mathf.FloorToInt(((2 * baseStat + iv + (ev / 4)) * level) / 100f) + level + 10;
 
+    private static int CalcOther(int baseStat, int iv, int ev, int level, float natureMod)
+    {
+        int baseVal = Mathf.FloorToInt(((2 * baseStat + iv + (ev / 4)) * level) / 100f) + 5;
+        return Mathf.FloorToInt(baseVal * natureMod);
+    }
+
+    // ---------------- Serialization ----------------
     void ISerializationCallbackReceiver.OnBeforeSerialize() { }
+
     void ISerializationCallbackReceiver.OnAfterDeserialize()
     {
         if (string.IsNullOrEmpty(uniqueID)) uniqueID = Guid.NewGuid().ToString();
+
         if (moves == null) moves = new List<MoveInstance>(4);
         while (moves.Count < 4) moves.Add(null);
         CompactMoves();
+
         evs.ClampTotals();
+
         if (species != null)
         {
             RecalculateStats();
             currentHP = Mathf.Clamp(currentHP, 0, stats.MaxHP);
 
-            // <<< Garantiza movimientos si el objeto vino “vacío” del serializador
+            // Si vino sin movimientos en la carga, repuebla desde learnset hasta el nivel actual
             if (!HasAnyMoveData())
             {
                 PopulateMovesFromLearnsetUpToLevel(level);
                 CompactMoves();
             }
         }
+        // heldItem no requiere corrección; se mantiene tal cual para compatibilidad de guardados.
     }
 }

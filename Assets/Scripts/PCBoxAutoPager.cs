@@ -11,7 +11,7 @@ public class PCBoxAutoPager : MonoBehaviour, IPointerEnterHandler, IPointerExitH
     public Direction direction = Direction.Next;
 
     [Header("Refs")]
-    public PokemonTeamPanelController teamPanel; // asócialo al controller que ya tienes
+    public PanelPokemonTeamController teamPanel; // controlador que expone PrevBox/NextBox
 
     private bool pointerOver;
     private Coroutine loop;
@@ -32,7 +32,7 @@ public class PCBoxAutoPager : MonoBehaviour, IPointerEnterHandler, IPointerExitH
     {
         while (pointerOver)
         {
-            // Solo auto-paginar si realmente hay un drag en curso
+            // Solo auto-paginar mientras haya un drag en curso
             if (IsDragging())
             {
                 if (teamPanel != null)
@@ -44,7 +44,7 @@ public class PCBoxAutoPager : MonoBehaviour, IPointerEnterHandler, IPointerExitH
             }
             else
             {
-                yield return null; // espera al siguiente frame mientras no haya drag
+                yield return null; // esperar siguiente frame si no hay drag
             }
         }
         loop = null;
@@ -52,10 +52,8 @@ public class PCBoxAutoPager : MonoBehaviour, IPointerEnterHandler, IPointerExitH
 
     private bool IsDragging()
     {
-        // Necesitamos que DragDropController exponga un flag estático o de instancia.
-        // Si aún no lo tienes, mira la nota bajo este bloque.
-        return DragDropController.IsDraggingAny;
-        // Alternativa si prefieres: return DragDropController.Instance != null && DragDropController.Instance.IsDragging;
+        // Consultar el singleton; evita CS0120
+        return DragDropController.Instance != null && DragDropController.Instance.IsDraggingAny;
     }
 
     private void OnDisable()

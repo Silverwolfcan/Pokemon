@@ -15,6 +15,7 @@ MonoBehaviour:
   itemName: Master Ball
   icon: {fileID: 1748886370, guid: fec9c10a41208a8418e4acec025bf369, type: 3}
   category: 0
-  description: 
+  description: "La Pok\xE9 Ball definitiva. Atrapa cualquier Pok\xE9mon salvaje y
+    no falla nunca."
   catchMultiplier: 255
   unlockedByDefault: 1

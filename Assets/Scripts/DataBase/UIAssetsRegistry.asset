@@ -1,0 +1,129 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5de7e6a302852f747b614ded738c8a7a, type: 3}
+  m_Name: UIAssetsRegistry
+  m_EditorClassIdentifier: 
+  pokemonTypeSprites:
+  - type: 0
+    sprite: {fileID: 997750196, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 12
+    sprite: {fileID: -115544652, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 2
+    sprite: {fileID: -148011529, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 14
+    sprite: {fileID: -1804637586, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 6
+    sprite: {fileID: -719504067, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 11
+    sprite: {fileID: -58714515, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 3
+    sprite: {fileID: 1260723425, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 15
+    sprite: {fileID: -1083938645, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 9
+    sprite: {fileID: -312144500, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 13
+    sprite: {fileID: 133127778, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 4
+    sprite: {fileID: 721888891, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 17
+    sprite: {fileID: 1352563898, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 7
+    sprite: {fileID: 652723063, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 16
+    sprite: {fileID: 1759236615, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 10
+    sprite: {fileID: 1342067644, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 8
+    sprite: {fileID: 161284548, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 1
+    sprite: {fileID: 1868401954, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 5
+    sprite: {fileID: 892720796, guid: f203bd6174109d1419558f68c86cf924, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  elementTypeSprites:
+  - type: 0
+    sprite: {fileID: -1096680106, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 6
+    sprite: {fileID: -448906544, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 9
+    sprite: {fileID: -870191450, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 7
+    sprite: {fileID: 1561447936, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 8
+    sprite: {fileID: -1246890261, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 12
+    sprite: {fileID: 1927415857, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 11
+    sprite: {fileID: 643444769, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 13
+    sprite: {fileID: -2048829604, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 16
+    sprite: {fileID: 1195109108, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 1
+    sprite: {fileID: -1486727281, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 2
+    sprite: {fileID: 1382504215, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 3
+    sprite: {fileID: -561004835, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 4
+    sprite: {fileID: 1686110479, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 10
+    sprite: {fileID: -1913194709, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 5
+    sprite: {fileID: -951960036, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 14
+    sprite: {fileID: -1305146014, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 15
+    sprite: {fileID: 1175055911, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  - type: 17
+    sprite: {fileID: 279115452, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
+    color: {r: 0, g: 0, b: 0, a: 0}
+  maleSprite: {fileID: -1103557431, guid: 1cf95b5dd520707439c05b5447249838, type: 3}
+  femaleSprite: {fileID: 1225867477, guid: 1cf95b5dd520707439c05b5447249838, type: 3}
+  unknownSprite: {fileID: 0}
+  partyBgUnselected: {fileID: 188100676, guid: 596db0a5e14401b4cb0d1836b8369187, type: 3}
+  partyBgSelected: {fileID: 1179808154, guid: 596db0a5e14401b4cb0d1836b8369187, type: 3}

@@ -6,14 +6,18 @@ using TMPro;
 [RequireComponent(typeof(RectTransform))]
 public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
-    [Header("UI (opcionales)")]
+    [Header("UI")]
+    [SerializeField] private Image imgMove;       // Icono opcional del movimiento (si no hay sprite, se oculta)
+    [SerializeField] private Image imgMoveType;   // Icono del ElementType (desde UIAssetsRegistry)
     [SerializeField] private TextMeshProUGUI txtName;
     [SerializeField] private TextMeshProUGUI txtPP;
-    [SerializeField] private TextMeshProUGUI txtType;
+
+    [Header("Assets")]
+    [SerializeField] private UIAssetsRegistry assets; // Para obtener sprite del ElementType
 
     [Header("Apariencia")]
     [SerializeField, Range(0f, 1f)] private float emptyAlpha = 0.25f;
-    [SerializeField, Range(0f, 1f)] private float dragDimAlpha = 0.5f; // oscurecer slot original durante drag
+    [SerializeField, Range(0f, 1f)] private float dragDimAlpha = 0.5f; // dim del slot original durante drag
 
     private CanvasGroup cg;
     private MoveGridUI grid;
@@ -25,11 +29,6 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
     private RectTransform rt;
     private GameObject ghost;
     private Transform dragLayer;
-
-    private float fixedXScreen;
-    private float minYScreen, maxYScreen;
-    private float halfHeightScreen;
-    private Vector2 pointerOffsetScreen;
     private float originalAlpha = 1f;
 
     private void Awake()
@@ -57,51 +56,62 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
 
         if (txtName) txtName.text = empty ? "" : move.data.moveName;
         if (txtPP) txtPP.text = empty ? "" : $"{move.currentPP}/{move.maxPP}";
-        if (txtType) txtType.text = empty ? "" : move.data.type.ToString();
+
+        if (imgMoveType)
+        {
+            if (empty)
+            {
+                imgMoveType.enabled = false;
+                imgMoveType.sprite = null;
+            }
+            else
+            {
+                var spType = assets ? assets.GetTypeSprite(move.data.type) : null;
+                imgMoveType.enabled = spType != null;
+                imgMoveType.sprite = spType;
+                imgMoveType.preserveAspect = true;
+            }
+        }
+
+        if (imgMove)
+        {
+            if (empty)
+            {
+                imgMove.enabled = false;
+            }
+            else
+            {
+                imgMove.enabled = imgMove.sprite != null; // si no hay sprite, oculta
+                imgMove.preserveAspect = true;
+            }
+        }
 
         if (cg) cg.alpha = (empty && transparentIfEmpty) ? emptyAlpha : 1f;
     }
 
     private bool IsEmpty => (move == null || move.data == null);
 
-    // ---------------- Drag con “fantasma” ----------------
+    // ---------------- Drag 2D con “fantasma” ----------------
     public void OnBeginDrag(PointerEventData eventData)
     {
         if (grid == null || IsEmpty) return;
 
         fromIndex = transform.GetSiblingIndex();
 
-        // Datos del contenedor en pantalla
-        var bounds = grid.GetVerticalBoundsScreen();
-        minYScreen = bounds.minY; maxYScreen = bounds.maxY;
-
-        Vector3[] corners = new Vector3[4];
-        rt.GetWorldCorners(corners);
-        halfHeightScreen = 0.5f * (corners[1].y - corners[0].y);
-
-        fixedXScreen = grid.GetRowCenterXScreen(transform);
-
-        var cam = grid.RootCanvas && grid.RootCanvas.renderMode != RenderMode.ScreenSpaceOverlay
-            ? grid.RootCanvas.worldCamera : null;
-        var itemScreen = RectTransformUtility.WorldToScreenPoint(cam, rt.position);
-        pointerOffsetScreen = itemScreen - eventData.position;
-
-        // Crear fantasma clonando el slot
         dragLayer = EnsureDragLayer(grid.RootCanvas);
         ghost = Instantiate(gameObject, dragLayer, true);
         ghost.name = $"{name}__Ghost";
 
-        // eliminar este script en el fantasma y bloquear raycasts/interacción
+        // Quita scripts y raycasts del fantasma
         foreach (var ms in ghost.GetComponentsInChildren<MoveSlotUI>(true)) Destroy(ms);
         foreach (var sel in ghost.GetComponentsInChildren<Selectable>(true)) sel.interactable = false;
         foreach (var g in ghost.GetComponentsInChildren<Graphic>(true)) g.raycastTarget = false;
 
-        // alpha del fantasma = 1.0 (sin fade)
         var ghostCg = ghost.GetComponent<CanvasGroup>() ?? ghost.AddComponent<CanvasGroup>();
         ghostCg.blocksRaycasts = false;
         ghostCg.alpha = 1f;
 
-        // Oscurecer SOLO el slot original
+        // Dim del original
         originalAlpha = cg.alpha;
         cg.alpha = dragDimAlpha;
 
@@ -118,11 +128,9 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
     {
         if (grid == null) { CleanupGhost(); return; }
 
-        // Índice visual de destino: ignorando ESTA fila
         int requested = grid.FindIndexForPointer(eventData.position, transform);
         int clamped = grid.ClampToNonNullZone(requested);
 
-        // Persistir y refrescar (MoveGridUI compacta/guarda)
         grid.NotifyDrop(fromIndex, clamped);
 
         CleanupGhost();
@@ -131,12 +139,8 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
 
     private void UpdateGhostPosition(PointerEventData ev)
     {
-        float y = Mathf.Clamp(ev.position.y + pointerOffsetScreen.y, minYScreen + halfHeightScreen, maxYScreen - halfHeightScreen);
-        if (ghost)
-        {
-            var grt = (RectTransform)ghost.transform;
-            grt.position = new Vector3(fixedXScreen, y, 0f);
-        }
+        if (!ghost) return;
+        ((RectTransform)ghost.transform).position = ev.position; // libre en 2D
     }
 
     private void CleanupGhost()

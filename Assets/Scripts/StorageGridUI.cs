@@ -30,9 +30,8 @@ public class StorageGridUI : MonoBehaviour
         if (mode == GridMode.Party)
             return PokemonStorageManager.Instance.PlayerParty;
 
-        // PC box actual. Si tienes GetActiveBox(), cámbialo aquí sin problema.
+        // PC box actual
         return PokemonStorageManager.Instance.PcStorage.ActiveBox;
-        // return PokemonStorageManager.Instance.PcStorage.GetActiveBox();
     }
 
     private int ExpectedCount(IPokemonStorage st)
@@ -41,13 +40,6 @@ public class StorageGridUI : MonoBehaviour
         return mode == GridMode.Party ? 6 : 30;
     }
 
-    /// <summary>
-    /// Reconstruye los slots si:
-    /// - No hay storage.
-    /// - Cambió la referencia de storage (p. ej. siguiente caja).
-    /// - Cambió la capacidad esperada.
-    /// En otro caso, reusa los existentes.
-    /// </summary>
     private void EnsureBuilt(IPokemonStorage storage)
     {
         int expected = ExpectedCount(storage);
@@ -60,14 +52,11 @@ public class StorageGridUI : MonoBehaviour
 
         if (!needsRebuild) return;
 
-        // Limpiar duro: reparentamos antes de destruir para que el contenedor
-        // quede vacío en el mismo frame (evita que se “acumulen” visualmente).
         ClearChildrenNow(content);
         slots.Clear();
 
         if (storage == null) { lastStorageRef = null; return; }
 
-        // Crear exactamente expected slots
         for (int i = 0; i < expected; i++)
         {
             var go = Instantiate(slotPrefab, content);
@@ -81,22 +70,22 @@ public class StorageGridUI : MonoBehaviour
 
     public void Refresh()
     {
-        if (!content || !slotPrefab)
-            return;
+        if (!content || !slotPrefab) return;
 
         var storage = GetStorage();
 
-        // Asegura estructura correcta según el storage actual
-        EnsureBuilt(storage);
+        // --- NUEVO: compactar la party antes de pintar (sin huecos intermedios)
+        if (mode == GridMode.Party && storage is PokemonParty party)
+        {
+            // Compact() ya reordena el array moviendo nulls al final.
+            party.Compact();
+        }
 
-        // Si no hay storage (p.e. al cargar escena) salimos
+        EnsureBuilt(storage);
         if (storage == null) return;
 
-        // Re-vincula/repinta todos los slots
         for (int i = 0; i < slots.Count; i++)
-        {
             slots[i].SetContext(storage, i);
-        }
     }
 
     // llamado por StorageSlotUI
@@ -105,26 +94,15 @@ public class StorageGridUI : MonoBehaviour
         onPokemonClicked?.Invoke(p);
     }
 
-    // utilidad pública (p. ej. panel cambia de caja)
-    public void ForceRebuildAndRefresh()
+    // utilidad
+    private static void ClearChildrenNow(Transform t)
     {
-        lastStorageRef = null; // fuerza rebuild
-        Refresh();
-    }
-
-    private void OnEnable() { lastStorageRef = null; Refresh(); }
-    private void OnDisable() { /* nada */ }
-
-    // -------- helpers --------
-    private static void ClearChildrenNow(Transform parent)
-    {
-        // Reparent + Destroy para que el contenedor quede vacío inmediatamente
-        while (parent.childCount > 0)
+        if (!t) return;
+        for (int i = t.childCount - 1; i >= 0; i--)
         {
-            var child = parent.GetChild(0);
-            child.SetParent(null, false);
-            if (Application.isPlaying) Object.Destroy(child.gameObject);
-            else Object.DestroyImmediate(child.gameObject);
+            var c = t.GetChild(i);
+            if (Application.isPlaying) Destroy(c.gameObject);
+            else DestroyImmediate(c.gameObject);
         }
     }
 }
