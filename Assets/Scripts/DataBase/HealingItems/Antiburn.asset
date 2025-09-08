@@ -12,7 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3d41a57fca82c90459db2cddfe6cf601, type: 3}
   m_Name: Antiburn
   m_EditorClassIdentifier: 
-  itemName: "Ant\xEDdoto"
+  id: c0b98d018d22d134081b7380a5d9267c
+  itemName: Antiquemaduras
   icon: {fileID: 549134724, guid: f2a43c04f84bb88429e3366959e6be63, type: 3}
   category: 1
   description: "Medicina en espray que cura las quemaduras a un Pok\xE9mon."

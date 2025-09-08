@@ -1082,6 +1082,7 @@ MonoBehaviour:
   partyRoot: {fileID: 0}
   pcRoot: {fileID: 0}
   assets: {fileID: 11400000, guid: 3a7be7600b6b4d945bedae69dfb62ad2, type: 2}
+  parentGrid: {fileID: 0}
   partySelectedArrow: {fileID: 6553474751656775718}
   partyBackground: {fileID: 897177015830629783}
   txtName: {fileID: 1842525584894683838}
@@ -1096,11 +1097,9 @@ MonoBehaviour:
   pcSelectedFrame: {fileID: 0}
   pcOccupiedColor: {r: 0.03137255, g: 0.21568628, b: 0.31764707, a: 1}
   pcEmptyColor: {r: 0.7764706, g: 0.7764706, b: 0.7764706, a: 1}
+  useEmptyPlaceholder: 0
   emptyPlaceholder: {fileID: 0}
-  emptyAlpha: 0.25
-  fadeEmptySlots: 1
-  autoHideAllTextsWhenEmpty: 1
-  extraHideWhenEmpty: []
+  emptyBgAlpha: 0.3
 --- !u!1 &4340346788560506742
 GameObject:
   m_ObjectHideFlags: 0

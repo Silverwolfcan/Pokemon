@@ -122,6 +122,17 @@ MonoBehaviour:
   - type: 17
     sprite: {fileID: 279115452, guid: 35a65eaa781c5c848a86ad2672e77f1f, type: 3}
     color: {r: 0, g: 0, b: 0, a: 0}
+  statusSprites:
+  - status: 1
+    sprite: {fileID: 21300000, guid: e6024cc92c390454baccca685c69df33, type: 3}
+  - status: 2
+    sprite: {fileID: 21300000, guid: 32e8ff5548cb2b6478001b4bc702be02, type: 3}
+  - status: 3
+    sprite: {fileID: 21300000, guid: f865b01098b724247985a8c50db1d7b5, type: 3}
+  - status: 4
+    sprite: {fileID: 21300000, guid: 208f62ee7280e7a4aa6a0cfb5165b3cc, type: 3}
+  - status: 5
+    sprite: {fileID: 21300000, guid: ebe47acf2bd40fb409d2b09e26fb2f7b, type: 3}
   maleSprite: {fileID: -1103557431, guid: 1cf95b5dd520707439c05b5447249838, type: 3}
   femaleSprite: {fileID: 1225867477, guid: 1cf95b5dd520707439c05b5447249838, type: 3}
   unknownSprite: {fileID: 0}

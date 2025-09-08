@@ -18,7 +18,35 @@ MonoBehaviour:
   type: 0
   attackCategory: 0
   power: 0
-  accuracy: 0
+  accuracy: 1
   pp: 20
+  priority: 0
   hasSecondaryEffect: 0
   secondaryEffectDescription: 
+  appliesPrimaryStatus: 0
+  statusToApply: 0
+  statusChance: 100
+  onlyIfDamageDealt: 1
+  modifiesStages: 0
+  stageTarget: 1
+  stageStat: 0
+  stageDelta: -1
+  stageChance: 100
+  stageChanges:
+  - target: 0
+    stat: 0
+    delta: 1
+    chance: 100
+  - target: 0
+    stat: 2
+    delta: 1
+    chance: 100
+  isFixedDamage: 0
+  fixedDamage: 0
+  isMultiHit: 0
+  multiHitMin: 2
+  multiHitMax: 5
+  drainPercent: 0
+  recoilPercent: 0
+  causesFlinch: 0
+  flinchChance: 0

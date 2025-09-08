@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3d41a57fca82c90459db2cddfe6cf601, type: 3}
   m_Name: Antidote
   m_EditorClassIdentifier: 
+  id: ed3962f2ed8395a49b8bd4a2f1d35f1b
   itemName: "Ant\xEDdoto"
   icon: {fileID: 582582714, guid: f2a43c04f84bb88429e3366959e6be63, type: 3}
   category: 1

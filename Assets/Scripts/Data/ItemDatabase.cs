@@ -45,7 +45,7 @@ public class ItemDatabase : ScriptableObject
                 else Debug.LogWarning($"[ItemDatabase] Nombre duplicado: {item.itemName}", item);
             }
 
-            // byCategory
+            // byCategory 
             if (!_byCategory.TryGetValue(item.category, out var list))
             {
                 list = new List<ItemData>();

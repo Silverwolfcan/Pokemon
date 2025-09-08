@@ -253,7 +253,7 @@ Rigidbody:
   m_IsKinematic: 0
   m_Interpolate: 0
   m_Constraints: 0
-  m_CollisionDetection: 0
+  m_CollisionDetection: 1
 --- !u!114 &3338881444644191599
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -273,3 +273,10 @@ MonoBehaviour:
   groundRestOffset: 0.1
   traceRadius: 0.12
   baseArcHeight: 0.5
+  baseCurveStrength: 0.8
+  duration: 0.9
+  maxBounces: 2
+  bounciness: 0.4
+  stopSpeed: 0.7
+  shakeAmplitude: 0.12
+  shakeDuration: 0.15
