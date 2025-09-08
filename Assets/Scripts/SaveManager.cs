@@ -1,20 +1,21 @@
+// Servicios/SaveManager.cs
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
-// ---------- DTOs de guardado robustos ----------
+// ---------- DTOs de guardado ----------
 [Serializable] public class PartyDTO { public List<PokemonInstance> slots = new List<PokemonInstance>(6); public List<bool> occupied = new List<bool>(6); }
 [Serializable] public class BoxDTO { public List<PokemonInstance> slots = new List<PokemonInstance>(30); public List<bool> occupied = new List<bool>(30); }
 [Serializable] public class PCDTO { public List<BoxDTO> boxes = new List<BoxDTO>(); }
 
-// ---------- Inventario/ajustes (tus clases existentes) ----------
+// ---------- Inventario/ajustes ----------
 [Serializable]
 public class PlayerSettings
 {
     public bool autoSaveEnabled = true;
-    [Min(0.1f)] public float autoSaveIntervalMinutes = 5f; // editable en inspector
+    [Min(0.1f)] public float autoSaveIntervalMinutes = 5f;
 }
 
 [Serializable] public class ItemStack { public ItemData item; public int amount; }
@@ -24,18 +25,20 @@ public class PlayerSettings
 [Serializable]
 public class PlayerSaveData
 {
-    // NUEVO (robusto)
     public PartyDTO partyDTO = new PartyDTO();
     public PCDTO pcDTO = new PCDTO();
 
-    // LEGADO (por compatibilidad de lectura)
-    public List<PokemonInstance> party = new List<PokemonInstance>();                     // OBSOLETO
-    public List<List<PokemonInstance>> pcBoxes = new List<List<PokemonInstance>>();       // OBSOLETO
+    // Legado (lectura/inspección)
+    public List<PokemonInstance> party = new List<PokemonInstance>();
+    public List<List<PokemonInstance>> pcBoxes = new List<List<PokemonInstance>>();
 
     public PlayerSettings settings = new PlayerSettings();
     public PlayerInventory inventory = new PlayerInventory();
     public bool hasCaughtFirstPokemon = false;
 }
+
+// ---------- Save root ----------
+public enum SaveRoot { PersistentDataPath, Documents }
 
 public class SaveManager : MonoBehaviour
 {
@@ -44,15 +47,48 @@ public class SaveManager : MonoBehaviour
     [Header("Archivo de guardado")]
     [SerializeField] private string fileName = "save.json";
 
+    [Header("Destino")]
+    [SerializeField] private SaveRoot saveRoot = SaveRoot.Documents;
+    [SerializeField] private string documentsSubfolder = "PokemonLike";
+
     public PlayerSaveData Current { get; private set; } = new PlayerSaveData();
 
-    private string FilePath => Path.Combine(Application.persistentDataPath, fileName);
+    // Directorio base según opción. Crea la carpeta si no existe.
+    private string GetBaseDirectory()
+    {
+        if (saveRoot == SaveRoot.Documents)
+        {
+            try
+            {
+                string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                if (string.IsNullOrEmpty(docs)) throw new Exception("MyDocuments vacío");
+                string dir = Path.Combine(docs, documentsSubfolder);
+                Directory.CreateDirectory(dir);
+                return dir;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[SaveManager] No se pudo usar Mis Documentos. Fallback a persistentDataPath. Detalle: {e.Message}");
+            }
+        }
+
+        string p = Application.persistentDataPath;
+        Directory.CreateDirectory(p);
+        return p;
+    }
+
+    private string FilePath => Path.Combine(GetBaseDirectory(), fileName);
     private Coroutine autosaveRoutine;
 
     private void Awake()
     {
         if (Instance != null) { Destroy(gameObject); return; }
-        Instance = this; DontDestroyOnLoad(gameObject);
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
+
+        // Asegura carpeta y traza ruta en arranque
+        _ = GetBaseDirectory();
+        Debug.Log($"[SaveManager] Ruta de guardado: {FilePath}");
     }
 
     private void Start()
@@ -89,7 +125,7 @@ public class SaveManager : MonoBehaviour
             hasCaughtFirstPokemon = PokemonStorageManager.Instance.HasCaughtFirstPokemon
         };
 
-        // 2) PARTY -> DTO con máscara
+        // 2) PARTY -> DTO
         var party = PokemonStorageManager.Instance.PlayerParty;
         snapshot.partyDTO = new PartyDTO();
         for (int i = 0; i < party.MaxCapacity; i++)
@@ -98,10 +134,9 @@ public class SaveManager : MonoBehaviour
             snapshot.partyDTO.slots.Add(p);
             snapshot.partyDTO.occupied.Add(p != null);
         }
-        // (legado: opcionalmente seguimos escribiendo, por si quieres inspeccionar)
-        snapshot.party = party.ToList();
+        snapshot.party = party.ToList(); // legado
 
-        // 3) PC -> DTO con máscara (solo cajas desbloqueadas)
+        // 3) PC -> DTO (cajas desbloqueadas)
         var pc = PokemonStorageManager.Instance.PcStorage;
         snapshot.pcDTO = new PCDTO();
         for (int b = 0; b < pc.UnlockedBoxCount; b++)
@@ -116,8 +151,7 @@ public class SaveManager : MonoBehaviour
             }
             snapshot.pcDTO.boxes.Add(dto);
         }
-        // (legado)
-        snapshot.pcBoxes = pc.ToSave();
+        snapshot.pcBoxes = pc.ToSave(); // legado
 
         Current = snapshot;
 
@@ -134,13 +168,12 @@ public class SaveManager : MonoBehaviour
             Current = JsonUtility.FromJson<PlayerSaveData>(json) ?? new PlayerSaveData();
             Debug.Log($"[SaveManager] Cargado {FilePath}");
 
-            // Restaurar al StorageManager con preferencia por DTO
             PokemonStorageManager.Instance.LoadFromSave(Current);
         }
         else
         {
             Current = new PlayerSaveData();
-            Debug.Log("[SaveManager] No hay archivo; creando uno nuevo en el primer guardado.");
+            Debug.Log("[SaveManager] No hay archivo; se creará en el primer guardado.");
             PokemonStorageManager.Instance.LoadFromSave(Current);
         }
     }

@@ -100,7 +100,9 @@ MonoBehaviour:
   imgIcon: {fileID: 7130781006597584492}
   txtName: {fileID: 6953747417090415410}
   txtCount: {fileID: 5038529287058415814}
-  selectedHighlight: {fileID: 0}
+  imgBackground: {fileID: 2281210346692866994}
+  bgUnselected: {fileID: -1541148047, guid: e5ee5f4dc12f12f40868198750f676c7, type: 3}
+  bgSelected: {fileID: 229804665, guid: e5ee5f4dc12f12f40868198750f676c7, type: 3}
 --- !u!1 &1218080580335819004
 GameObject:
   m_ObjectHideFlags: 0

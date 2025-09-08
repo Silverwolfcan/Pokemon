@@ -7,24 +7,24 @@ public class CombatService : MonoBehaviour
     public static CombatService Instance { get; private set; }
 
     [Header("Prefabs/Refs")]
-    [SerializeField] private GameObject encounterPrefab; // Prefab con EncounterController
+    [SerializeField] private GameObject encounterPrefab;            // Prefab con EncounterController
+    [SerializeField] private GameObject combatCanvasRoot;           // Canvas/raíz de la UI de combate (opcional)
 
     [Header("Config por defecto (se aplica a cada combate)")]
-    [SerializeField] private float defaultOffsetFromCenter = 2.5f;   // distancia desde el centro a cada pokémon
-    [SerializeField] private float defaultPlayerRingRadius = 10f;    // radio máximo para que el jugador se aleje del centro
+    [SerializeField] private float defaultOffsetFromCenter = 2.5f;  // distancia desde el centro a cada pokémon
+    [SerializeField] private float defaultPlayerRingRadius = 10f;   // radio máximo para que el jugador se aleje del centro
 
     private EncounterController activeEncounter;
     private bool captureInProgress = false;
 
     private void Awake()
     {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
         DontDestroyOnLoad(gameObject);
+
+        // Asegura canvas de combate apagado al arrancar
+        SetCombatCanvas(false);
     }
 
     public bool IsInEncounter => activeEncounter != null;
@@ -39,6 +39,10 @@ public class CombatService : MonoBehaviour
             Debug.LogError("[CombatService] Falta encounterPrefab.");
             return;
         }
+
+        // Activa UI de combate y prepara cursor/controles
+        SetCombatCanvas(true);
+        PrepareForBattleUI();
 
         var go = Instantiate(encounterPrefab);
         activeEncounter = go.GetComponent<EncounterController>();
@@ -66,7 +70,8 @@ public class CombatService : MonoBehaviour
             captureInProgress = false;
             activeEncounter = null;
 
-            // Rehabilitar control del jugador y cursor de gameplay
+            // Apaga UI de combate y restaura controles/cursor de gameplay
+            SetCombatCanvas(false);
             RestorePlayerControls();
         });
     }
@@ -74,7 +79,7 @@ public class CombatService : MonoBehaviour
     /// <summary>Fuerza finalizar el combate activo (por ejemplo, al huir o al cargar escena).</summary>
     public void ForceEndEncounter()
     {
-        if (!activeEncounter) { RestorePlayerControls(); return; }
+        if (!activeEncounter) { SetCombatCanvas(false); RestorePlayerControls(); return; }
 
         activeEncounter.ForceEnd();
         activeEncounter = null;
@@ -83,7 +88,8 @@ public class CombatService : MonoBehaviour
         var selector = FindAnyObjectByType<ItemSelectorUI>();
         selector?.SetCaptureLock(false);
 
-        // Asegura que el jugador vuelve a tener control tras salir
+        // Apaga UI de combate y vuelve a gameplay
+        SetCombatCanvas(false);
         RestorePlayerControls();
     }
 
@@ -119,6 +125,22 @@ public class CombatService : MonoBehaviour
     }
 
     // -------------------- Utilidades privadas --------------------
+    private void SetCombatCanvas(bool on)
+    {
+        if (!combatCanvasRoot) return;
+        if (combatCanvasRoot.activeSelf != on) combatCanvasRoot.SetActive(on);
+    }
+
+    private static void PrepareForBattleUI()
+    {
+        // Deshabilita controles del jugador y libera el cursor para la UI de combate
+        var pc = FindAnyObjectByType<PlayerController>();
+        if (pc != null) pc.EnableControls(false);
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+
     private static void RestorePlayerControls()
     {
         var pc = FindAnyObjectByType<PlayerController>();
