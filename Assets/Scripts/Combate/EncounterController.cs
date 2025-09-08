@@ -27,6 +27,9 @@ public class EncounterController : MonoBehaviour
     private Vector3 ringCenter;
     private bool ended = false;
 
+    // Canvas raíz del combate (se detecta en Begin, incluye objetos inactivos)
+    private GameObject combatUIRoot;
+
     // ---------- Config pública ----------
     public void ApplyConfig(float? offsetFromCenter = null, float? playerRingRadius = null)
     {
@@ -34,7 +37,6 @@ public class EncounterController : MonoBehaviour
         if (playerRingRadius.HasValue) ringRadiusForPlayer = Mathf.Max(1f, playerRingRadius.Value);
     }
 
-    /// Llama esto desde tu servicio de combate si el encuentro es de entrenador.
     public void SetEncounterRules(bool canCapture, bool canRun)
     {
         IsCaptureAllowed = canCapture;
@@ -70,7 +72,17 @@ public class EncounterController : MonoBehaviour
         ToggleCombatOn(playerMonTf, true);
         ToggleCombatOn(wildMonTf, true);
 
+        // Activar Canvas de combate y mostrar menú
+        ActivateCombatUI(true);
+
+        // Señal global: combate activo
         try { GameEventBus.RaiseEncounterStateChanged(true); } catch { }
+
+        // Evitar acciones del mundo mientras aparece la UI
+        var pc = FindAnyObjectByType<PlayerController>();
+        if (pc) pc.EnableControls(false);
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
 
         StartCoroutine(CoRun());
     }
@@ -260,6 +272,38 @@ public class EncounterController : MonoBehaviour
         go.transform.localPosition = Vector3.up * 2f;
     }
 
+    // ---------- Canvas de combate ----------
+    private void ActivateCombatUI(bool active)
+    {
+        try
+        {
+            if (combatUIRoot == null)
+            {
+                // 1) Intento rápido con objetos activos
+                var ctrl = FindAnyObjectByType<CombatUIController>();
+                // 2) Si está inactivo en la escena, buscar incluyendo inactivos
+                if (ctrl == null)
+                {
+                    var all = Resources.FindObjectsOfTypeAll<CombatUIController>();
+                    if (all != null && all.Length > 0) ctrl = all[0];
+                }
+                if (ctrl != null) combatUIRoot = ctrl.transform.root.gameObject;
+            }
+
+            if (combatUIRoot != null)
+            {
+                if (combatUIRoot.activeSelf != active) combatUIRoot.SetActive(active);
+                if (active)
+                {
+                    // Mostrar menú principal tras activarlo
+                    var ctrl = combatUIRoot.GetComponentInChildren<CombatUIController>(true);
+                    ctrl?.ShowMainMenu();
+                }
+            }
+        }
+        catch { }
+    }
+
     // ---------- Cierre ----------
     private void EndEncounter(EncounterResult result)
     {
@@ -288,6 +332,9 @@ public class EncounterController : MonoBehaviour
 
         ToggleCombatOn(playerMonTf, false);
         ToggleCombatOn(wildMonTf, false);
+
+        // Apagar Canvas de combate
+        ActivateCombatUI(false);
 
         try { GameEventBus.RaiseEncounterStateChanged(false); } catch { }
 

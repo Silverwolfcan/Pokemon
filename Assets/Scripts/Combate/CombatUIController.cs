@@ -1,12 +1,10 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using System.Collections.Generic;
 
 public class CombatUIController : MonoBehaviour
 {
     [Header("Root")]
-    [Tooltip("Panel raíz del menú principal (NO pongas aquí el Canvas).")]
     public GameObject panelRoot;
     public Button btnAttack, btnCapture, btnSwitch, btnItems, btnRun;
 
@@ -31,12 +29,9 @@ public class CombatUIController : MonoBehaviour
     private ItemSelectorUI selector;
     private EncounterController encounter;
 
-    private bool captureMode = false;
-
     private void OnEnable()
     {
         HideAll();
-        captureMode = false;
 
         playerController = UnityEngine.Object.FindAnyObjectByType<PlayerController>();
         selector = UnityEngine.Object.FindAnyObjectByType<ItemSelectorUI>();
@@ -57,7 +52,6 @@ public class CombatUIController : MonoBehaviour
             turn = null;
         }
         CancelInvoke(nameof(RefreshContext));
-        captureMode = false;
 
         GameEventBus.InventoryChanged -= OnInventoryChanged;
         GameEventBus.EncounterStateChanged -= OnEncounterStateChanged;
@@ -133,25 +127,26 @@ public class CombatUIController : MonoBehaviour
         PopulateMovesIfPossible();
     }
 
-    private void OnInventoryChanged() => UpdateButtonsByRules();
+    private void OnInventoryChanged() => UpdateCaptureButton();
 
     private void UpdateButtonsByRules()
     {
+        UpdateCaptureButton();
+        if (btnRun) btnRun.interactable = (encounter == null || encounter.CanRun);
+        if (verbose) Debug.Log($"[CombatUI] Buttons → Capture:{btnCapture?.interactable} Run:{btnRun?.interactable}");
+    }
+
+    private void UpdateCaptureButton()
+    {
+        if (!btnCapture) return;
         bool allowCapture = (encounter == null || encounter.IsCaptureAllowed) && HasAnyPokeball();
-        bool allowRun = (encounter == null || encounter.CanRun);
-
-        if (btnCapture) btnCapture.interactable = allowCapture;
-        if (btnRun) btnRun.interactable = allowRun;
-
-        if (verbose) Debug.Log($"[CombatUI] Buttons → Capture:{allowCapture} Run:{allowRun}");
+        btnCapture.interactable = allowCapture;
     }
 
     // ---------- Turnos ----------
     private void OnPlayerTurnStart()
     {
-        captureMode = false;
         playerController?.EnableControls(false);
-
         PopulateMovesIfPossible();
         ShowMainMenu();
         UpdateButtonsByRules();
@@ -160,7 +155,6 @@ public class CombatUIController : MonoBehaviour
 
     private void OnEnemyTurnStart()
     {
-        captureMode = false;
         playerController?.EnableControls(false);
         HideAll();
         SetCursorForGameplay();
@@ -254,7 +248,6 @@ public class CombatUIController : MonoBehaviour
             }
         }
 
-        captureMode = true;
         playerController?.EnableControls(true);
         HideAll();
         SetCursorForGameplay();
