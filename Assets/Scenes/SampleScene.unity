@@ -10166,6 +10166,7 @@ GameObject:
   - component: {fileID: 559259458}
   - component: {fileID: 559259457}
   - component: {fileID: 559259461}
+  - component: {fileID: 559259462}
   m_Layer: 5
   m_Name: Canvas_Combat
   m_TagString: Untagged
@@ -10281,6 +10282,22 @@ MonoBehaviour:
   teamPanelRoot: {fileID: 1240647521}
   bagPanel: {fileID: 1226278457}
   bagPanelRoot: {fileID: 1226278453}
+--- !u!114 &559259462
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 559259456}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 415095c25dff26342995aff2df19ff12, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  teamPanelRoot: {fileID: 1240647521}
+  switchPanel: {fileID: 1240647522}
+  mainPanelRoot: {fileID: 1879047032}
+  controlCursor: 1
 --- !u!1 &562221085
 GameObject:
   m_ObjectHideFlags: 0
@@ -20355,7 +20372,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1240647522
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -20370,6 +20387,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   root: {fileID: 1240647521}
   partyGrid: {fileID: 1958354620}
+  turn: {fileID: 0}
 --- !u!224 &1240647523
 RectTransform:
   m_ObjectHideFlags: 0

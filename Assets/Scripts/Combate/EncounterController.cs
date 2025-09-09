@@ -109,7 +109,22 @@ public class EncounterController : MonoBehaviour
 
         while (!ended)
         {
-            if (playerCbt.IsFainted) { EndEncounter(EncounterResult.PlayerFainted); break; }
+            // KO del jugador: forzar cambio si hay relevo
+            if (playerCbt.IsFainted)
+            {
+                if (HasAliveReplacementForPlayer())
+                {
+                    if (turnCtl != null && !turnCtl.ForceSwitchPending)
+                        turnCtl.RequestForcedPlayerSwitch();
+
+                    while (!ended && (playerCbt.IsFainted || (turnCtl != null && turnCtl.ForceSwitchPending)))
+                        yield return null;
+
+                    if (ended) break;
+                }
+                else { EndEncounter(EncounterResult.PlayerFainted); break; }
+            }
+
             if (enemyCbt.IsFainted) { EndEncounter(EncounterResult.EnemyFainted); break; }
 
             state = State.PlayerTurn;
@@ -117,7 +132,20 @@ public class EncounterController : MonoBehaviour
             yield return StartCoroutine(turnCtl.DoPlayerTurn(ringCenter, combatantOffsetFromCenter));
             if (ended) break;
 
-            if (playerCbt.IsFainted) { EndEncounter(EncounterResult.PlayerFainted); break; }
+            if (playerCbt.IsFainted)
+            {
+                if (HasAliveReplacementForPlayer())
+                {
+                    if (turnCtl != null && !turnCtl.ForceSwitchPending)
+                        turnCtl.RequestForcedPlayerSwitch();
+
+                    while (!ended && (playerCbt.IsFainted || (turnCtl != null && turnCtl.ForceSwitchPending)))
+                        yield return null;
+
+                    if (ended) break;
+                }
+                else { EndEncounter(EncounterResult.PlayerFainted); break; }
+            }
             if (enemyCbt.IsFainted) { EndEncounter(EncounterResult.EnemyFainted); break; }
 
             state = State.EnemyTurn;
@@ -126,6 +154,20 @@ public class EncounterController : MonoBehaviour
             if (ended) break;
         }
     }
+
+    // ¿Hay reemplazo vivo en la party del jugador?
+    private bool HasAliveReplacementForPlayer()
+    {
+        var party = PokemonStorageManager.Instance ? PokemonStorageManager.Instance.PlayerParty : null;
+        if (party == null) return false;
+        for (int i = 0; i < party.MaxCapacity; i++)
+        {
+            var p = party.GetAt(i);
+            if (p != null && !ReferenceEquals(p, playerCbt?.Model) && p.currentHP > 0) return true;
+        }
+        return false;
+    }
+
 
     private IEnumerator CoPositionCombatants()
     {
