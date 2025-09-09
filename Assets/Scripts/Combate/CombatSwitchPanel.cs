@@ -1,12 +1,11 @@
 ﻿using UnityEngine;
-using UnityEngine.UI;
 
-/// Panel simple para elegir un Pokémon del equipo. Usa tu StorageGridUI de party.
+/// Panel para elegir un Pokémon del equipo. Usa tu StorageGridUI de party.
+/// Sin botón de retroceso; se cierra con ESC desde CombatUIController.
 public class CombatSwitchPanel : MonoBehaviour
 {
     [SerializeField] private GameObject root;
     [SerializeField] private StorageGridUI partyGrid;
-    [SerializeField] private Button btnCancel;
 
     private System.Action<PokemonInstance> onSelected;
 
@@ -18,28 +17,19 @@ public class CombatSwitchPanel : MonoBehaviour
             partyGrid.onPokemonClicked.RemoveAllListeners();
             partyGrid.onPokemonClicked.AddListener(OnClickPokemon);
         }
-        if (btnCancel) btnCancel.onClick.AddListener(Close);
-        Close();
+        // Importante: NO cerrar aquí. Dejar el estado inicial al del Inspector.
     }
 
-    public void OpenVoluntary(System.Action<PokemonInstance> onChosen, System.Action onCancel = null)
+    public void OpenVoluntary(System.Action<PokemonInstance> onChosen)
     {
         onSelected = onChosen;
-        if (btnCancel) btnCancel.gameObject.SetActive(true);
         partyGrid?.Refresh();
         if (root) root.SetActive(true);
-        // cancelar → volver al menú principal
-        if (btnCancel && onCancel != null)
-        {
-            btnCancel.onClick.RemoveAllListeners();
-            btnCancel.onClick.AddListener(() => { Close(); onCancel(); });
-        }
     }
 
     public void OpenForced(System.Action<PokemonInstance> onChosen)
     {
         onSelected = onChosen;
-        if (btnCancel) btnCancel.gameObject.SetActive(false);
         partyGrid?.Refresh();
         if (root) root.SetActive(true);
     }

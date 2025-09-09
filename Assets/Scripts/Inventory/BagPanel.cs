@@ -1,22 +1,21 @@
-using System.Collections.Generic;
+Ôªøusing System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TMPro;
 
-/// Panel de mochila reutilizable. Modo normal y modo combate.
 public class BagPanel : MonoBehaviour
 {
     [Header("Lista de objetos")]
     [SerializeField] private ScrollRect scrollView;
     [SerializeField] private RectTransform content;
-    [SerializeField] private GameObject rowPrefab; // InventoryItemRowUI
+    [SerializeField] private GameObject rowPrefab;
 
     [Header("Tabs (opcional)")]
     [SerializeField] private InventoryTabsUI tabs;
 
-    [Header("DescripciÛn (opcional)")]
+    [Header("Descripci√≥n (opcional)")]
     [SerializeField] private TMP_Text txtDescription;
 
     [Header("Party izquierda")]
@@ -29,14 +28,17 @@ public class BagPanel : MonoBehaviour
     [Header("Opciones")]
     [SerializeField] private bool hideLockedOrZeroQty = true;
 
-    // Estado
+    [Header("Modo combate")]
+    [SerializeField] private bool excludeBallsInCombat = true;
+    [SerializeField] private bool requireUsableInBattle = true;
+    [SerializeField] private bool openContextMenuOnLeftClickInCombat = true;
+
     private readonly List<RowRef> rows = new();
     private RowRef selectedRow;
     private ItemData lastSelectedItem;
     private PokemonInstance selectedPokemon;
     private ItemCategory currentCategory = ItemCategory.Healing;
 
-    // Modo combate
     private bool combatMode = false;
     private System.Action<ItemData, PokemonInstance> combatUseCallback;
     private System.Action combatCloseCallback;
@@ -47,16 +49,14 @@ public class BagPanel : MonoBehaviour
     private InventoryManager IM => InventoryManager.Instance;
     private PokemonStorageManager SM => PokemonStorageManager.Instance;
 
-    // ---------- API p˙blica para combate ----------
     public void OpenForCombat(System.Action<ItemData, PokemonInstance> onUse, System.Action onClose)
     {
         combatMode = true;
         combatUseCallback = onUse;
         combatCloseCallback = onClose;
         gameObject.SetActive(true);
-        OnEnable(); // asegurar refresco si estaba desactivado
         AutoSelectFirstPokemon();
-        SetFeedback("Elige un objeto y un PokÈmon.");
+        SetFeedback("Elige un objeto y un Pok√©mon.");
     }
 
     public void Close()
@@ -67,7 +67,6 @@ public class BagPanel : MonoBehaviour
         gameObject.SetActive(false);
     }
 
-    // ---------- Ciclo ----------
     private void Awake()
     {
         es = EventSystem.current ?? FindAnyObjectByType<EventSystem>();
@@ -77,8 +76,6 @@ public class BagPanel : MonoBehaviour
 
     private void OnEnable()
     {
-        if (!content || !rowPrefab) return;
-
         if (partyGrid)
         {
             partyGrid.SetMode(StorageGridUI.GridMode.Party);
@@ -132,7 +129,6 @@ public class BagPanel : MonoBehaviour
 
     private void Update()
     {
-        // Click derecho sobre fila -> men˙
         if (Input.GetMouseButtonDown(1))
         {
             var hitRow = RaycastFirst<InventoryItemRowUI>();
@@ -147,7 +143,6 @@ public class BagPanel : MonoBehaviour
                 }
             }
 
-            // Click derecho sobre slot de party con objeto -> quitar (sÛlo fuera de combate)
             if (!combatMode)
             {
                 var slot = RaycastFirst<StorageSlotUI>();
@@ -165,7 +160,6 @@ public class BagPanel : MonoBehaviour
         }
     }
 
-    // ---------- Tabs / Lista ----------
     private void OnTabChanged(int tabIndex)
     {
         currentCategory = TabIndexToCategory(tabIndex);
@@ -174,12 +168,21 @@ public class BagPanel : MonoBehaviour
 
     private void RebuildList()
     {
+        if (!content || !rowPrefab) return;
+
         foreach (var r in rows) if (r != null && r.go) Destroy(r.go);
         rows.Clear();
 
         var src = IM?.inventory ?? new List<ItemEntry>();
-        var filtered = src.Where(e => e != null && e.item != null && e.item.category == currentCategory);
+        IEnumerable<ItemEntry> filtered = src.Where(e => e != null && e.item != null && e.item.category == currentCategory);
         if (hideLockedOrZeroQty) filtered = filtered.Where(e => e.unlocked && e.quantity > 0);
+
+        if (combatMode)
+        {
+            if (excludeBallsInCombat) filtered = filtered.Where(e => e.item.category != ItemCategory.Pokeball);
+            if (requireUsableInBattle)
+                filtered = filtered.Where(e => e.item is HealingItemData hi && hi.usableInBattle);
+        }
 
         var list = filtered.ToList();
         list.Sort(InventorySortUtility.CompareEntries);
@@ -190,7 +193,7 @@ public class BagPanel : MonoBehaviour
             var row = go.GetComponent<InventoryItemRowUI>();
             var rr = new RowRef(go, row, e);
             rows.Add(rr);
-            row.Bind(e, _ => SetSelectedRow(rr));
+            row.Bind(e, _ => OnRowLeftClick(rr));
         }
 
         if (scrollView) scrollView.verticalNormalizedPosition = 1f;
@@ -204,18 +207,21 @@ public class BagPanel : MonoBehaviour
         else ClearSelectionUI();
     }
 
+    private void OnRowLeftClick(RowRef rr)
+    {
+        SetSelectedRow(rr);
+        if (combatMode && openContextMenuOnLeftClickInCombat && contextMenu != null)
+            contextMenu.Show(rr.rect, BagContextMenuUI.Mode.ItemActionsOnlyUse);
+    }
+
     private void SetSelectedRow(RowRef rr)
     {
         foreach (var r in rows) r.ui?.SetSelected(r == rr);
         selectedRow = rr;
         lastSelectedItem = rr?.entry?.item;
-
-        if (txtDescription)
-        {
-            var item = rr?.entry?.item;
-            txtDescription.text = item ? item.description : "";
-        }
+        if (txtDescription) txtDescription.text = rr?.entry?.item ? rr.entry.item.description : "";
     }
+
     private void ClearSelectionUI()
     {
         foreach (var r in rows) r.ui?.SetSelected(false);
@@ -223,26 +229,33 @@ public class BagPanel : MonoBehaviour
         if (txtDescription) txtDescription.text = "";
     }
 
-    // ---------- Acciones de men˙ ----------
     private void OnUseFromMenu()
     {
         var entry = selectedRow?.entry;
         if (entry == null || entry.item == null) { SetFeedback("Selecciona un objeto."); contextMenu?.Hide(); return; }
-        if (selectedPokemon == null) { SetFeedback("Selecciona un PokÈmon del equipo."); contextMenu?.Hide(); return; }
+        if (selectedPokemon == null) { SetFeedback("Selecciona un Pok√©mon del equipo."); contextMenu?.Hide(); return; }
 
         if (combatMode)
         {
-            // En combate: no aplicar. Delegar en TurnController y cerrar.
+            if (excludeBallsInCombat && entry.item.category == ItemCategory.Pokeball)
+            { SetFeedback("Las Balls se usan desde Captura."); contextMenu?.Hide(); return; }
+
+            if (requireUsableInBattle && entry.item is HealingItemData hi && !hi.usableInBattle)
+            { SetFeedback("Este objeto no puede usarse en combate."); contextMenu?.Hide(); return; }
+
+            if (!(entry.item is HealingItemData))
+            { SetFeedback("S√≥lo curativos durante el combate."); contextMenu?.Hide(); return; }
+
             combatUseCallback?.Invoke(entry.item, selectedPokemon);
             contextMenu?.Hide();
             combatCloseCallback?.Invoke();
             return;
         }
 
-        // Fuera de combate: aplicar aquÌ
+        // fuera de combate
         if (entry.item is HealingItemData heal)
         {
-            var res = ItemEffectsUtility.ApplyHealingItem(selectedPokemon, heal, -1);
+            var res = ItemEffectsUtility.ApplyHealingItem(selectedPokemon, heal, -1); // ‚Üê nombre correcto
             if (res == ItemUseResult.Applied)
             {
                 InventoryManager.Instance?.UseItem(heal);
@@ -252,28 +265,20 @@ public class BagPanel : MonoBehaviour
             }
             else SetFeedback("No surte efecto.");
         }
-        else
-        {
-            SetFeedback("Este objeto no puede usarse aquÌ.");
-        }
+        else SetFeedback("Este objeto no puede usarse aqu√≠.");
 
         contextMenu?.Hide();
     }
 
     private void OnGiveFromMenu()
     {
-        if (combatMode) { contextMenu?.Hide(); return; } // no permitido en combate
-
+        if (combatMode) { contextMenu?.Hide(); return; }
         var entry = selectedRow?.entry;
         if (entry == null || entry.item == null) { SetFeedback("Selecciona un objeto."); contextMenu?.Hide(); return; }
-        if (selectedPokemon == null) { SetFeedback("Selecciona un PokÈmon del equipo."); contextMenu?.Hide(); return; }
+        if (selectedPokemon == null) { SetFeedback("Selecciona un Pok√©mon del equipo."); contextMenu?.Hide(); return; }
 
         if (InventoryManager.Instance && InventoryManager.Instance.GetQuantity(entry.item) <= 0)
-        {
-            SetFeedback("No te queda ninguna unidad.");
-            contextMenu?.Hide();
-            return;
-        }
+        { SetFeedback("No te queda ninguna unidad."); contextMenu?.Hide(); return; }
 
         var previo = selectedPokemon.EquipItem(entry.item);
         if (previo != null) InventoryManager.Instance.AddItem(previo, 1, true);
@@ -289,18 +294,17 @@ public class BagPanel : MonoBehaviour
     {
         if (combatMode) { contextMenu?.Hide(); return; }
         var target = selectedPokemon;
-        if (target == null || !target.HasHeldItem) { SetFeedback("Ese PokÈmon no lleva objeto."); contextMenu?.Hide(); return; }
+        if (target == null || !target.HasHeldItem) { SetFeedback("Ese Pok√©mon no lleva objeto."); contextMenu?.Hide(); return; }
 
         var removed = target.TakeHeldItem();
         if (removed != null) InventoryManager.Instance?.AddItem(removed, 1, true);
 
-        SetFeedback($"{target.DisplayName} soltÛ {removed?.itemName ?? "objeto"}.");
+        SetFeedback($"{target.DisplayName} solt√≥ {removed?.itemName ?? "objeto"}.");
         partyGrid?.Refresh();
         RebuildList();
         contextMenu?.Hide();
     }
 
-    // ---------- Util ----------
     private void AutoSelectFirstPokemon()
     {
         var party = SM ? SM.PlayerParty : null;
@@ -316,7 +320,7 @@ public class BagPanel : MonoBehaviour
     {
         if (!raycaster || !es) return null;
         var ped = new PointerEventData(es) { position = Input.mousePosition };
-        var results = new System.Collections.Generic.List<RaycastResult>();
+        var results = new List<RaycastResult>();
         raycaster.Raycast(ped, results);
         foreach (var r in results)
         {
@@ -341,7 +345,6 @@ public class BagPanel : MonoBehaviour
         _ => ItemCategory.Healing
     };
 
-    // ---- RowRef ----
     private sealed class RowRef
     {
         public readonly GameObject go;
@@ -349,9 +352,6 @@ public class BagPanel : MonoBehaviour
         public readonly InventoryItemRowUI ui;
         public readonly ItemEntry entry;
         public RowRef(GameObject go, InventoryItemRowUI ui, ItemEntry e)
-        {
-            this.go = go; this.ui = ui; this.entry = e;
-            this.rect = go ? go.GetComponent<RectTransform>() : null;
-        }
+        { this.go = go; this.ui = ui; this.entry = e; this.rect = go ? go.GetComponent<RectTransform>() : null; }
     }
 }

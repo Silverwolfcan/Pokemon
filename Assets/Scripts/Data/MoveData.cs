@@ -1,4 +1,4 @@
-using UnityEngine;
+Ôªøusing UnityEngine;
 
 public enum AttackType { Physical, Special, Status }
 public enum ElementType
@@ -6,53 +6,52 @@ public enum ElementType
     Normal, Fire, Water, Grass, Electric, Ice, Fighting, Poison, Ground,
     Flying, Psychic, Bug, Rock, Ghost, Dragon, Dark, Steel, Fairy
 }
-
 public enum MoveTarget { Opponent, Self }
 public enum StatusAilment { None, Poison, Burn, Paralysis, Sleep, Freeze }
 
 [System.Serializable]
 public struct StageDelta
 {
-    [Range(-6, 6)] public int attack;
-    [Range(-6, 6)] public int defense;
-    [Range(-6, 6)] public int spAttack;
-    [Range(-6, 6)] public int spDefense;
-    [Range(-6, 6)] public int speed;
-    [Range(-6, 6)] public int accuracy;
-    [Range(-6, 6)] public int evasion;
-
+    [Range(-6, 6)] public int attack, defense, spAttack, spDefense, speed, accuracy, evasion;
     public bool IsZero =>
         attack == 0 && defense == 0 && spAttack == 0 && spDefense == 0 &&
         speed == 0 && accuracy == 0 && evasion == 0;
 }
 
-[CreateAssetMenu(fileName = "New Move", menuName = "Pokemon/Moves")]
+[CreateAssetMenu(menuName = "PokemonLike/Move Data")]
 public class MoveData : ScriptableObject
 {
-    [Header("Identidad")]
-    public string moveName;
-    [TextArea] public string description;
-
     [Header("Datos base")]
-    public ElementType type = ElementType.Normal;
+    public string moveName;
+    public ElementType type;
+    [Min(0)] public int power = 0;
+    [Range(0, 100)] public int accuracy = 100;
     public AttackType attackCategory = AttackType.Physical;
-    [Min(0)] public int power = 0;        // 0 para movimientos de estado
-    [Range(0, 100)] public int accuracy = 100; // 0 = siempre acierta (tratado en MoveExecutor)
-    [Min(1)] public int pp = 10;
-    [Tooltip("Prioridad del movimiento. +1 act˙a antes que 0.")] public int priority = 0;
-    [Tooltip("Hace contacto fÌsico (para habilidades/objetos).")] public bool makesContact = false;
+    [Min(0)] public int pp = 20;                   // ‚Üê restaurado para compatibilidad
 
-    [Header("Efectos secundarios / Estado / Buffs")]
+    [Header("Secundarios: estado/etapas")]
     public bool hasSecondaryEffect = false;
     [Range(0, 100)] public int secondaryChance = 100;
     public MoveTarget effectTarget = MoveTarget.Opponent;
-
-    [Tooltip("Estado alterado a aplicar si procede.")]
     public StatusAilment statusToApply = StatusAilment.None;
-
-    [Tooltip("Modificadores de etapas. Positivo = buff, negativo = debuff.")]
     public StageDelta stageDelta;
 
-    [Header("DescripciÛn opcional de efectos")]
+    [Header("Flinch")]
+    public bool causesFlinch = false;
+    [Range(0, 100)] public int flinchChance = 0;
+
+    [Header("Drenaje")]
+    public bool hasDrain = false;
+    [Range(0, 100)] public int drainPercentOfDamage = 0;
+
+    [Header("Retroceso")]
+    public bool hasRecoil = false;
+    [Range(0, 100)] public int recoilPercentOfDamage = 0;
+
+    [Header("Multigolpe")]
+    public bool isMultiHit = false;
+    public Vector2Int hitsRange = new Vector2Int(2, 5);
+
+    [Header("Descripci√≥n")]
     [TextArea] public string secondaryEffectDescription;
 }

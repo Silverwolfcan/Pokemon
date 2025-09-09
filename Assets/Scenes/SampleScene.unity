@@ -20167,6 +20167,9 @@ MonoBehaviour:
   contextMenu: {fileID: 1180406948}
   feedback: {fileID: 1995277072}
   hideLockedOrZeroQty: 1
+  excludeBallsInCombat: 1
+  requireUsableInBattle: 1
+  openContextMenuOnLeftClickInCombat: 1
 --- !u!1 &1232616568
 GameObject:
   m_ObjectHideFlags: 0
@@ -20352,7 +20355,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1240647522
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -20367,7 +20370,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   root: {fileID: 1240647521}
   partyGrid: {fileID: 1958354620}
-  btnCancel: {fileID: 0}
 --- !u!224 &1240647523
 RectTransform:
   m_ObjectHideFlags: 0

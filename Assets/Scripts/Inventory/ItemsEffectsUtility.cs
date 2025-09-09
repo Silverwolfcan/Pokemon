@@ -1,22 +1,17 @@
 using UnityEngine;
+using System.Reflection;
 
 public enum ItemUseResult { Applied, NotApplicable, InvalidTarget }
 
-/// Lógica de aplicación genérica para HealingItemData.
-/// No depende de UI; úsala desde tus menús dentro/fuera de combate.
+/// Lógica de aplicación genérica para HealingItemData. Reutilizable dentro y fuera de combate.
 public static class ItemEffectsUtility
 {
-    /// <summary>
-    /// Aplica un HealingItem sobre un Pokémon. Para efectos que requieren un movimiento concreto (Éter), pasa moveIndex.
-    /// Retorna Applied si algo cambió; NotApplicable si no hacía falta; InvalidTarget si los parámetros no cuadran.
-    /// </summary>
     public static ItemUseResult ApplyHealingItem(PokemonInstance target, HealingItemData data, int moveIndex = -1)
     {
         if (target == null || data == null) return ItemUseResult.InvalidTarget;
 
         switch (data.effect)
         {
-            // --- HP ---
             case HealingEffectType.HealFixed:
                 if (target.currentHP <= 0) return ItemUseResult.NotApplicable;
                 return Heal(target, data.amount);
@@ -28,52 +23,38 @@ public static class ItemEffectsUtility
 
             case HealingEffectType.HealToFull:
                 if (target.currentHP <= 0) return ItemUseResult.NotApplicable;
-                return HealToFull(target, data.curePrimaryStatus);
+                var resHF = HealToFull(target);
+                if (resHF == ItemUseResult.Applied && data.curePrimaryStatus) TryCureAllStatuses(target);
+                return resHF;
 
-            // --- Revivir ---
             case HealingEffectType.ReviveToHalf:
                 if (target.currentHP > 0) return ItemUseResult.NotApplicable;
                 target.currentHP = Mathf.Max(1, Mathf.CeilToInt(target.stats.MaxHP * 0.5f));
-                // TODO: limpiar estado KO si lo modelas aparte
+                TryCureAllStatuses(target);
                 return ItemUseResult.Applied;
 
             case HealingEffectType.ReviveToFull:
                 if (target.currentHP > 0) return ItemUseResult.NotApplicable;
                 target.currentHP = target.stats.MaxHP;
-                // TODO: limpiar estado KO si lo modelas aparte
+                TryCureAllStatuses(target);
                 return ItemUseResult.Applied;
 
-            // --- Estados (pendiente de integrar con tu sistema de estados) ---
-            case HealingEffectType.CurePoison:
-            case HealingEffectType.CureParalysis:
-            case HealingEffectType.CureSleep:
-            case HealingEffectType.CureBurn:
-            case HealingEffectType.CureFreeze:
-            case HealingEffectType.CureAllStatus:
-                {
-                    // Aún no hay sistema de estados en PokemonInstance; dejamos el gancho y no consumimos por defecto.
-                    Debug.LogWarning("[ItemEffectsUtility] CureStatus llamado pero no hay sistema de estados aún. Implementar cuando existan los estados.");
-                    return ItemUseResult.NotApplicable;
-                }
+            case HealingEffectType.CurePoison: return TryCureSpecific(target, StatusService.PrimaryStatus.Poison);
+            case HealingEffectType.CureParalysis: return TryCureSpecific(target, StatusService.PrimaryStatus.Paralysis);
+            case HealingEffectType.CureSleep: return TryCureSpecific(target, StatusService.PrimaryStatus.Sleep);
+            case HealingEffectType.CureBurn: return TryCureSpecific(target, StatusService.PrimaryStatus.Burn);
+            case HealingEffectType.CureFreeze: return TryCureSpecific(target, StatusService.PrimaryStatus.Freeze);
+            case HealingEffectType.CureAllStatus: return TryCureAllStatuses(target) ? ItemUseResult.Applied : ItemUseResult.NotApplicable;
 
-            // --- PP ---
-            case HealingEffectType.RestorePPSingleFixed:
-                return RestorePPSingle(target, data.ppAmount, moveIndex);
-
-            case HealingEffectType.RestorePPSingleFull:
-                return RestorePPSingle(target, int.MaxValue, moveIndex);
-
-            case HealingEffectType.RestorePPAllFixed:
-                return RestorePPAll(target, data.ppAmount);
-
-            case HealingEffectType.RestorePPAllFull:
-                return RestorePPAll(target, int.MaxValue);
+            case HealingEffectType.RestorePPSingleFixed: return RestorePPSingle(target, data.ppAmount, moveIndex);
+            case HealingEffectType.RestorePPSingleFull: return RestorePPSingle(target, int.MaxValue, moveIndex);
+            case HealingEffectType.RestorePPAllFixed: return RestorePPAll(target, data.ppAmount);
+            case HealingEffectType.RestorePPAllFull: return RestorePPAll(target, int.MaxValue);
         }
-
         return ItemUseResult.InvalidTarget;
     }
 
-    private static ItemUseResult Heal(PokemonInstance p, int amount)
+    static ItemUseResult Heal(PokemonInstance p, int amount)
     {
         int before = p.currentHP;
         int after = Mathf.Clamp(before + Mathf.Max(0, amount), 0, p.stats.MaxHP);
@@ -82,15 +63,14 @@ public static class ItemEffectsUtility
         return ItemUseResult.Applied;
     }
 
-    private static ItemUseResult HealToFull(PokemonInstance p, bool cureStatus)
+    static ItemUseResult HealToFull(PokemonInstance p)
     {
         if (p.currentHP >= p.stats.MaxHP) return ItemUseResult.NotApplicable;
         p.currentHP = p.stats.MaxHP;
-        // if (cureStatus) TODO: limpiar estados cuando existan
         return ItemUseResult.Applied;
     }
 
-    private static ItemUseResult RestorePPSingle(PokemonInstance p, int amount, int moveIndex)
+    static ItemUseResult RestorePPSingle(PokemonInstance p, int amount, int moveIndex)
     {
         if (p.Moves == null || p.Moves.Count == 0) return ItemUseResult.NotApplicable;
         if (moveIndex < 0 || moveIndex >= p.Moves.Count) return ItemUseResult.InvalidTarget;
@@ -107,7 +87,7 @@ public static class ItemEffectsUtility
         return ItemUseResult.Applied;
     }
 
-    private static ItemUseResult RestorePPAll(PokemonInstance p, int amountEach)
+    static ItemUseResult RestorePPAll(PokemonInstance p, int amountEach)
     {
         if (p.Moves == null || p.Moves.Count == 0) return ItemUseResult.NotApplicable;
         int applied = 0;
@@ -119,12 +99,80 @@ public static class ItemEffectsUtility
             int before = mv.currentPP;
             int max = mv.maxPP;
             int add = amountEach >= int.MaxValue ? (max - before) : Mathf.Min(amountEach, max - before);
-            if (add > 0)
-            {
-                mv.currentPP += add;
-                applied++;
-            }
+            if (add > 0) { mv.currentPP += add; applied++; }
         }
         return applied > 0 ? ItemUseResult.Applied : ItemUseResult.NotApplicable;
+    }
+
+    // --- Estados ---
+    static bool TryCureAllStatuses(PokemonInstance target)
+    {
+        var sc = FindContainerFor(target);
+        if (sc == null) return false;
+
+        bool changed = false;
+
+        var clear = sc.GetType().GetMethod("ClearPrimary", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (clear != null)
+        {
+            var before = GetPrimary(sc);
+            clear.Invoke(sc, null);
+            var after = GetPrimary(sc);
+            changed |= before != after;
+        }
+        else changed |= TryApplyPrimary(sc, StatusService.PrimaryStatus.None);
+
+        var clearConf = sc.GetType().GetMethod("ClearConfusion", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (clearConf != null) { clearConf.Invoke(sc, null); changed = true; }
+
+        return changed;
+    }
+
+    static ItemUseResult TryCureSpecific(PokemonInstance target, StatusService.PrimaryStatus s)
+    {
+        var sc = FindContainerFor(target);
+        if (sc == null) return ItemUseResult.NotApplicable;
+        if (GetPrimary(sc) != s) return ItemUseResult.NotApplicable;
+
+        if (TryApplyPrimary(sc, StatusService.PrimaryStatus.None)) return ItemUseResult.Applied;
+
+        var clear = sc.GetType().GetMethod("ClearPrimary", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (clear != null) { clear.Invoke(sc, null); return ItemUseResult.Applied; }
+        return ItemUseResult.NotApplicable;
+    }
+
+    static StatusService.PrimaryStatus GetPrimary(object sc)
+    {
+        var pi = sc.GetType().GetProperty("Primary", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (pi != null) { try { return (StatusService.PrimaryStatus)pi.GetValue(sc); } catch { } }
+        return StatusService.PrimaryStatus.None;
+    }
+
+    static bool TryApplyPrimary(object sc, StatusService.PrimaryStatus s)
+    {
+        var mi = sc.GetType().GetMethod("TryApplyPrimary", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (mi != null) { try { return (bool)mi.Invoke(sc, new object[] { s }); } catch { } }
+        return false;
+    }
+
+    static object FindContainerFor(PokemonInstance model)
+    {
+        var all = Object.FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < all.Length; i++)
+        {
+            var mb = all[i]; if (!mb) continue;
+            var t = mb.GetType(); if (t.Name != "StatusContainer") continue;
+
+            var p = t.GetProperty("Model", BindingFlags.Public | BindingFlags.Instance);
+            PokemonInstance m = null;
+            if (p != null) m = p.GetValue(mb) as PokemonInstance;
+            if (m == null)
+            {
+                var f = t.GetField("_pokemon", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (f != null) m = f.GetValue(mb) as PokemonInstance;
+            }
+            if (ReferenceEquals(m, model)) return mb;
+        }
+        return null;
     }
 }
