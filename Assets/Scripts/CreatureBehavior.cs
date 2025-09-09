@@ -1,217 +1,182 @@
 ﻿using System.Collections;
 using UnityEngine;
+using UnityEngine.AI;
 
+/// IA de criatura salvaje. Nunca inicia corutinas si el GO está inactivo.
+[DefaultExecutionOrder(10)]
 public class CreatureBehavior : MonoBehaviour
 {
-    public float wanderRadius = 5f;
-    public float wanderInterval = 3f;
-    public float moveSpeed = 2f;
-    public float detectionRadius = 5f;
+    [Header("Movimiento libre")]
+    [SerializeField] private float wanderRadius = 5f;
+    [SerializeField] private float wanderInterval = 3f;
+    [SerializeField] private float moveSpeed = 2f;
+
+    [Header("Detección")]
+    [SerializeField] private float detectionRadius = 5f;
+    [SerializeField] private LayerMask groundMask = ~0;
+
+    [Header("Refs opcionales")]
+    [SerializeField] private NavMeshAgent agent;
+    [SerializeField] private Animator animator;
 
     [HideInInspector] public Transform player;
     [HideInInspector] public Vector3 spawnPoint;
 
-    private Coroutine currentAction;
-    private Coroutine behaviorLoop; // ← controlamos el loop para reanudarlo tras reactivación
-    private bool isMoving = false;
+    // Datos de juego (API pública requerida por Ball/Spawner/CombatContact)
+    [Tooltip("Instancia del Pokémon que representa esta criatura en el mundo.")]
+    public PokemonInstance pokemonInstance;
 
-    public PokemonInstance pokemonInstance { get; private set; }
+    // Estado
+    private Coroutine coWanderLoop;
+    private Coroutine coCurrentMove;
+    private bool isInCombat;
+    private bool isMoving;
 
-    private CombatContact contactHook;
-
-    // --- NUEVO ---
-    private bool isInCombat = false;
-    public bool IsInCombat => isInCombat;
-
-    void OnEnable()
-    {
-        // Al reactivar el GO (p.ej. tras captura fallida), Start NO se vuelve a llamar.
-        // Reaseguramos referencias mínimas y reanudamos el bucle de comportamiento.
-        if (player == null)
-        {
-            GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-            if (playerObj != null) player = playerObj.transform;
-        }
-
-        EnsureBehaviorLoopRunning();
-    }
-
-    void OnDisable()
-    {
-        // Al desactivar el GO se paran las corutinas; limpiamos punteros para dejar estado consistente.
-        if (currentAction != null) { StopCoroutine(currentAction); currentAction = null; }
-        if (behaviorLoop != null) { StopCoroutine(behaviorLoop); behaviorLoop = null; }
-        isMoving = false;
-    }
-
-    void Start()
-    {
-        if (player == null)
-        {
-            GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-            if (playerObj != null) player = playerObj.transform;
-        }
-        spawnPoint = transform.position;
-        contactHook = GetComponent<CombatContact>();
-        EnsureBehaviorLoopRunning(); // ← en vez de StartCoroutine directo
-    }
-
-    void Update()
-    {
-        if (isInCombat) return; // --- BLOQUEO en combate ---
-
-        if (!isMoving && pokemonInstance?.species != null && player != null &&
-            pokemonInstance.species.behaviorType == PokemonBehaviorType.Friendly)
-        {
-            float distanceToPlayer = Vector3.Distance(transform.position, player.position);
-            if (distanceToPlayer < detectionRadius) RotateTowardsPlayer();
-        }
-    }
-
-    private void EnsureBehaviorLoopRunning()
-    {
-        if (behaviorLoop == null)
-            behaviorLoop = StartCoroutine(BehaviorLoop());
-    }
-
-    IEnumerator BehaviorLoop()
-    {
-        while (true)
-        {
-            if (isInCombat) { yield return null; continue; } // --- BLOQUEO en combate ---
-
-            if (pokemonInstance?.species == null ||
-                pokemonInstance.species.behaviorType == PokemonBehaviorType.Idle)
-            {
-                yield return null;
-                continue;
-            }
-
-            float waitTime = Random.Range(1f, wanderInterval);
-
-            if (!isMoving &&
-                pokemonInstance.species.behaviorType == PokemonBehaviorType.Friendly &&
-                player != null && Vector3.Distance(transform.position, player.position) < detectionRadius)
-            {
-                waitTime += 2f;
-            }
-
-            // Espera antes de decidir siguiente destino
-            yield return new WaitForSeconds(waitTime);
-
-            float distanceToPlayer = player ? Vector3.Distance(transform.position, player.position) : Mathf.Infinity;
-            float distanceToSpawn = Vector3.Distance(transform.position, spawnPoint);
-
-            if (distanceToSpawn > wanderRadius)
-            {
-                SetDestination(spawnPoint);
-            }
-            else if (pokemonInstance.species.behaviorType == PokemonBehaviorType.Aggressive && distanceToPlayer < detectionRadius)
-            {
-                SetDestination(player.position);
-            }
-            else if (pokemonInstance.species.behaviorType == PokemonBehaviorType.Friendly)
-            {
-                Vector3 randomOffset = Random.insideUnitSphere * wanderRadius; randomOffset.y = 0;
-                SetDestination(spawnPoint + randomOffset);
-            }
-        }
-    }
-
-    void SetDestination(Vector3 target)
-    {
-        if (isInCombat) return; // no moverse en combate
-        if (currentAction != null) StopCoroutine(currentAction);
-        currentAction = StartCoroutine(MoveTo(target));
-    }
-
-    IEnumerator MoveTo(Vector3 target)
-    {
-        isMoving = true;
-        while (!isInCombat && Vector3.Distance(transform.position, target) > 0.1f)
-        {
-            Vector3 direction = (target - transform.position).normalized;
-            transform.position += direction * moveSpeed * Time.deltaTime;
-            if (direction != Vector3.zero)
-            {
-                Quaternion targetRot = Quaternion.LookRotation(direction);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, 5f * Time.deltaTime);
-            }
-            yield return null;
-        }
-        isMoving = false;
-    }
-
-    void RotateTowardsPlayer()
-    {
-        if (player == null) return;
-        Vector3 direction = (player.position - transform.position); direction.y = 0;
-        if (direction.sqrMagnitude > 0.01f)
-        {
-            Quaternion targetRotation = Quaternion.LookRotation(direction);
-            transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, 180f * Time.deltaTime);
-        }
-    }
-
-    public float GetCatchRate()
-    {
-        if (pokemonInstance != null && pokemonInstance.species != null)
-            return pokemonInstance.species.catchRate;
-        Debug.LogWarning("pokemonInstance/species es null al obtener la tasa de captura.");
-        return 0f;
-    }
-
-    public void SetPokemon(PokemonInstance instance)
-    {
-        pokemonInstance = instance;
-
-        // ✅ Garantiza que tenga movimientos para su nivel (si viene “vacío”)
-        pokemonInstance?.EnsureMovesForCurrentLevel();
-
-        if (contactHook == null) contactHook = GetComponent<CombatContact>() ?? gameObject.AddComponent<CombatContact>();
-        contactHook.Bind(transform, pokemonInstance, wild: true);
-
-        // Por si el GO se creó/activó en runtime:
-        EnsureBehaviorLoopRunning();
-    }
-
-    public void InitializeFromInstance(PokemonInstance instance)
-    {
-        pokemonInstance = instance;
-
-        // ✅ Garantiza movimientos si vienen vacíos
-        pokemonInstance?.EnsureMovesForCurrentLevel();
-
-        if (player == null)
-        {
-            GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-            if (playerObj != null) player = playerObj.transform;
-        }
-        spawnPoint = transform.position;
-
-        if (contactHook == null) contactHook = GetComponent<CombatContact>() ?? gameObject.AddComponent<CombatContact>();
-        contactHook.Bind(transform, pokemonInstance, wild: true);
-
-        EnsureBehaviorLoopRunning(); // ← evita duplicados y garantiza reanudación
-    }
-
+    // --- API COMPATIBLE ---
     public PokemonInstance GetPokemonInstance() => pokemonInstance;
+    public void SetPokemon(PokemonInstance p) { pokemonInstance = p; }
 
-    // --- NUEVO: Pausar/Reanudar modo combate ---
+    private void Awake()
+    {
+        if (!agent) agent = GetComponent<NavMeshAgent>();
+        if (!animator) animator = GetComponentInChildren<Animator>(true);
+        var playerObj = GameObject.FindGameObjectWithTag("Player");
+        if (playerObj) player = playerObj.transform;
+        spawnPoint = transform.position;
+    }
+
+    private void OnEnable()
+    {
+        if (!isInCombat) EnsureBehaviorLoopRunning();
+    }
+
+    private void Start()
+    {
+        if (!isInCombat) EnsureBehaviorLoopRunning();
+    }
+
+    private void OnDisable()
+    {
+        StopWanderLoop();
+        StopCurrentMove();
+    }
+
+    // --- API pública ---
     public void SetCombatMode(bool active)
     {
         isInCombat = active;
-
         if (active)
         {
-            // parar cualquier movimiento en curso
-            if (currentAction != null) { StopCoroutine(currentAction); currentAction = null; }
+            StopCurrentMove();
+            StopWanderLoop();
+            if (agent) agent.ResetPath();
             isMoving = false;
         }
         else
         {
-            // al salir de combate, aseguramos que el loop está corriendo
             EnsureBehaviorLoopRunning();
         }
+    }
+
+    public void EnsureBehaviorLoopRunning()
+    {
+        if (isInCombat) return;
+        if (!isActiveAndEnabled || !gameObject.activeInHierarchy) return;
+        if (coWanderLoop == null) coWanderLoop = StartCoroutine(CoWanderLoop());
+    }
+
+    // --- Wander ---
+    private IEnumerator CoWanderLoop()
+    {
+        while (!isInCombat && isActiveAndEnabled && gameObject.activeInHierarchy)
+        {
+            var next = GetRandomPointNear(spawnPoint, wanderRadius);
+            DoMove(next);
+
+            float t = 0f;
+            while (t < wanderInterval && !isInCombat)
+            {
+                t += Time.deltaTime;
+                yield return null;
+            }
+        }
+        coWanderLoop = null;
+    }
+
+    private void DoMove(Vector3 target)
+    {
+        StopCurrentMove();
+        coCurrentMove = StartCoroutine(CoMoveTo(target));
+    }
+
+    private IEnumerator CoMoveTo(Vector3 target)
+    {
+        isMoving = true;
+
+        if (agent && agent.isOnNavMesh)
+        {
+            agent.speed = moveSpeed;
+            agent.SetDestination(target);
+            if (animator) animator.SetBool("IsMoving", true);
+
+            while (!isInCombat && agent.enabled && agent.isOnNavMesh &&
+                   !agent.pathPending && Vector3.Distance(transform.position, target) > 0.2f)
+            {
+                yield return null;
+            }
+            agent.ResetPath();
+        }
+        else
+        {
+            while (!isInCombat && Vector3.Distance(transform.position, target) > 0.2f)
+            {
+                transform.position = Vector3.MoveTowards(transform.position, target, moveSpeed * Time.deltaTime);
+                yield return null;
+            }
+        }
+
+        if (animator) animator.SetBool("IsMoving", false);
+        isMoving = false;
+        coCurrentMove = null;
+    }
+
+    private void StopWanderLoop()
+    {
+        if (coWanderLoop != null)
+        {
+            StopCoroutine(coWanderLoop);
+            coWanderLoop = null;
+        }
+    }
+
+    private void StopCurrentMove()
+    {
+        if (coCurrentMove != null)
+        {
+            StopCoroutine(coCurrentMove);
+            coCurrentMove = null;
+        }
+    }
+
+    // --- Util ---
+    private Vector3 GetRandomPointNear(Vector3 origin, float radius)
+    {
+        for (int i = 0; i < 8; i++)
+        {
+            var rand = origin + Random.insideUnitSphere * radius;
+            rand.y = origin.y;
+
+            if (agent && agent.isOnNavMesh)
+            {
+                if (NavMesh.SamplePosition(rand, out var hit, 1.5f, NavMesh.AllAreas))
+                    return hit.position;
+            }
+            else
+            {
+                if (Physics.Raycast(rand + Vector3.up * 10f, Vector3.down, out var rh, 20f, groundMask))
+                    return rh.point;
+            }
+        }
+        return origin;
     }
 }
