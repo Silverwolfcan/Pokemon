@@ -8,7 +8,6 @@ using TMPro;
 public class StorageSlotUI : MonoBehaviour,
     IPointerClickHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IDropHandler
 {
-    // Registro global para selección única
     private static readonly HashSet<StorageSlotUI> AllSlots = new HashSet<StorageSlotUI>();
     private void OnEnable() { AllSlots.Add(this); }
     private void OnDisable() { AllSlots.Remove(this); }
@@ -37,10 +36,9 @@ public class StorageSlotUI : MonoBehaviour,
     [SerializeField] private Slider sliderHealth;
     [SerializeField] private TextMeshProUGUI txtHealth;
 
-    // NUEVO: Campos opcionales para mostrar objeto equipado (usados en Bolsa)
     [Header("Held Item (opcional, solo Bolsa)")]
-    [SerializeField] private TextMeshProUGUI txtHeldItemName; // puede quedar sin asignar
-    [SerializeField] private Image imgHeldItemIcon;           // puede quedar sin asignar
+    [SerializeField] private TextMeshProUGUI txtHeldItemName;
+    [SerializeField] private Image imgHeldItemIcon;
 
     // PC
     [Header("PC UI")]
@@ -53,13 +51,12 @@ public class StorageSlotUI : MonoBehaviour,
     [SerializeField] private Color pcEmptyColor = new Color32(0xC6, 0xC6, 0xC6, 0xFF);
 
     [Header("Vacío (solo party)")]
-    [SerializeField] private GameObject emptyPlaceholder;
     [SerializeField, Range(0f, 1f)] private float emptyAlpha = 0.25f;
+    [SerializeField] private GameObject emptyPlaceholder;
     [SerializeField] private bool fadeEmptySlots = true;
     [SerializeField] private bool autoHideAllTextsWhenEmpty = true;
     [SerializeField] private GameObject[] extraHideWhenEmpty;
 
-    // Contexto
     public IPokemonStorage Storage { get; private set; }
     public int Index { get; private set; }
 
@@ -68,7 +65,6 @@ public class StorageSlotUI : MonoBehaviour,
     private CanvasGroup canvasGroup;
     private TextMeshProUGUI[] cachedTexts;
 
-    // Estados de selección visual
     private bool pcIsSelected;
     private bool partyIsSelected;
 
@@ -81,9 +77,7 @@ public class StorageSlotUI : MonoBehaviour,
         canvasGroup.interactable = true;
         cachedTexts = GetComponentsInChildren<TextMeshProUGUI>(true);
 
-        // Visual por defecto
         InternalSetSelected(false);
-        // Asegura ocultar UI de objeto si existe
         SetHeldItemUI(false, null);
     }
 
@@ -134,7 +128,6 @@ public class StorageSlotUI : MonoBehaviour,
         }
     }
 
-    // ----- PC -----
     private void RefreshPc(bool has)
     {
         if (pcBackground) pcBackground.color = has ? pcOccupiedColor : pcEmptyColor;
@@ -155,11 +148,9 @@ public class StorageSlotUI : MonoBehaviour,
         }
 
         if (pcSelectedFrame) pcSelectedFrame.enabled = has && pcIsSelected;
-        // En PC no se muestra objeto equipado
         SetHeldItemUI(false, null);
     }
 
-    // ----- PARTY -----
     private void RefreshParty(bool has)
     {
         if (partyBackground && assets != null)
@@ -183,7 +174,7 @@ public class StorageSlotUI : MonoBehaviour,
             return;
         }
 
-        if (txtName) txtName.text = current.species?.pokemonName ?? "";
+        if (txtName) txtName.text = current.DisplayName;
         if (imgSprite)
         {
             imgSprite.enabled = true;
@@ -191,7 +182,14 @@ public class StorageSlotUI : MonoBehaviour,
             imgSprite.preserveAspect = true;
         }
 
-        if (imgExpRadial) { imgExpRadial.enabled = true; imgExpRadial.fillAmount = 0f; } // TODO: EXP real
+        // EXP radial real
+        if (imgExpRadial)
+        {
+            bool show = current.level < 100;
+            imgExpRadial.enabled = show;
+            imgExpRadial.fillAmount = show ? current.ExpProgress01() : 0f;
+        }
+
         if (txtLevel) txtLevel.text = current.level.ToString();
 
         if (imgSex)
@@ -209,20 +207,17 @@ public class StorageSlotUI : MonoBehaviour,
         }
         if (txtHealth) txtHealth.text = $"{current.currentHP}/{current.stats.MaxHP}";
 
-        // Mostrar objeto equipado solo si hay referencias asignadas
         if (current.HasHeldItem) SetHeldItemUI(true, current.HeldItem);
         else SetHeldItemUI(false, null);
     }
 
     private void SetHeldItemUI(bool show, ItemData item)
     {
-        // Texto
         if (txtHeldItemName)
         {
             txtHeldItemName.gameObject.SetActive(show);
             txtHeldItemName.text = show ? SafeItemName(item) : "";
         }
-        // Icono
         if (imgHeldItemIcon)
         {
             if (show && item != null && item.icon != null)
@@ -241,7 +236,6 @@ public class StorageSlotUI : MonoBehaviour,
         }
     }
 
-    // ----- Selección interna -----
     private void InternalSetSelected(bool selected)
     {
         bool isPcMode = parentGrid != null && parentGrid.mode == StorageGridUI.GridMode.PCBox;
@@ -263,7 +257,6 @@ public class StorageSlotUI : MonoBehaviour,
         }
     }
 
-    // ----- Util API para Drag -----
     public Sprite GetDisplaySprite()
     {
         if (Storage == null) return null;
@@ -279,7 +272,6 @@ public class StorageSlotUI : MonoBehaviour,
         return imgSprite ? imgSprite.rectTransform : null;
     }
 
-    // ----- Interacciones -----
     public void OnPointerClick(PointerEventData eventData)
     {
         if (current == null) return;
@@ -312,10 +304,8 @@ public class StorageSlotUI : MonoBehaviour,
     public void OnDrop(PointerEventData eventData)
     {
         DragDropController.Instance?.HandleDrop(this, eventData);
-        // Selección post-drop centralizada en DragDropController.
     }
 
-    // ----- Helpers -----
     private static string SafeItemName(ItemData item)
     {
         if (item == null) return "";

@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Datos/PokemonInstance.cs
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -75,74 +76,46 @@ public class MoveInstance
 [Serializable]
 public class PokemonInstance : ISerializationCallbackReceiver
 {
-    // ---------------- Identity ----------------
     [Header("Identity")]
     [SerializeField] private string uniqueID;
     public string UniqueID => uniqueID;
 
-    [Tooltip("Datos base de la especie")]
     public PokemonData species;
-
-    [Tooltip("Apodo opcional mostrado en la UI si no está vacío")]
     public string nickname;
-
-    /// Nombre a mostrar en UI (nick > displayName > pokemonName)
     public string DisplayName
         => !string.IsNullOrWhiteSpace(nickname)
             ? nickname
             : (species?.displayName ?? species?.pokemonName ?? string.Empty);
 
-    // ---------------- Main ----------------
     [Header("Main")]
     public int level = 1;
     public Gender gender = Gender.Unknown;
     public bool isShiny = false;
     public Nature nature = Nature.Hardy;
 
-    // ---------------- Stats ----------------
     [Header("Stats")]
     public IVs ivs = IVs.RandomIVs();
     public EVs evs;
     public PokemonStats stats;
     public int currentHP;
 
-    // ---------------- Progression ----------------
     [Header("Progression")]
-    public int currentExp;
+    public int currentExp; // EXP acumulada hacia el siguiente nivel
 
-    // ---------------- Abilities & Moves ----------------
     [Header("Abilities & Moves")]
     public AbilityData ability;
-
     [SerializeField] private List<MoveInstance> moves = new List<MoveInstance>(4);
     public IReadOnlyList<MoveInstance> Moves => moves;
 
-    // ---------------- Held Item ----------------
     [Header("Objeto equipado")]
     [SerializeField] private ItemData heldItem;
     public ItemData HeldItem => heldItem;
     public bool HasHeldItem => heldItem != null;
 
-    /// <summary>Equipa un objeto y devuelve el que tenía antes (si había).</summary>
-    public ItemData EquipItem(ItemData newItem)
-    {
-        var previous = heldItem;
-        heldItem = newItem;
-        return previous;
-    }
-
-    /// <summary>Quita y devuelve el objeto equipado (si había).</summary>
-    public ItemData TakeHeldItem()
-    {
-        var prev = heldItem;
-        heldItem = null;
-        return prev;
-    }
-
-    /// <summary>Quita el objeto equipado sin devolverlo.</summary>
+    public ItemData EquipItem(ItemData newItem) { var previous = heldItem; heldItem = newItem; return previous; }
+    public ItemData TakeHeldItem() { var prev = heldItem; heldItem = null; return prev; }
     public void ClearHeldItem() => heldItem = null;
 
-    // ---------------- Origin / Misc ----------------
     [Header("Origin / Misc")]
     public string originalTrainerName;
     public int originalTrainerID;
@@ -150,16 +123,9 @@ public class PokemonInstance : ISerializationCallbackReceiver
     public int metLevel;
     public string pokeballName;
 
-    // ---------------- Ctors ----------------
     public PokemonInstance() { uniqueID = Guid.NewGuid().ToString(); }
 
-    public PokemonInstance(
-        PokemonData species,
-        int level,
-        Gender gender = Gender.Unknown,
-        bool isShiny = false,
-        Nature? forcedNature = null,
-        AbilityData forcedAbility = null)
+    public PokemonInstance(PokemonData species, int level, Gender gender = Gender.Unknown, bool isShiny = false, Nature? forcedNature = null, AbilityData forcedAbility = null)
         : this()
     {
         this.species = species;
@@ -174,7 +140,8 @@ public class PokemonInstance : ISerializationCallbackReceiver
         RecalculateStats();
         currentHP = stats.MaxHP;
         InitializeMovesFromLearnset();
-        CompactMoves(); // asegura huecos al final
+        CompactMoves();
+        currentExp = 0;
     }
 
     private static Gender ResolveGenderFromSpecies(PokemonData s)
@@ -185,13 +152,11 @@ public class PokemonInstance : ISerializationCallbackReceiver
             case GenderRule.AlwaysMale: return Gender.Male;
             case GenderRule.AlwaysFemale: return Gender.Female;
             case GenderRule.Genderless: return Gender.Unknown;
-            case GenderRule.Ratio:
-            default:
-                return UnityEngine.Random.value < Mathf.Clamp01(s.maleRatio) ? Gender.Male : Gender.Female;
+            default: return UnityEngine.Random.value < Mathf.Clamp01(s.maleRatio) ? Gender.Male : Gender.Female;
         }
     }
 
-    // ---------------- Stats calc ----------------
+    // -------- Stats --------
     public void RecalculateStats()
     {
         stats = new PokemonStats
@@ -212,21 +177,61 @@ public class PokemonInstance : ISerializationCallbackReceiver
         foreach (var m in moves) m?.RestoreAllPP();
     }
 
+    // -------- EXP / Nivel --------
     public void AddExp(int amount)
     {
-        if (amount <= 0) return;
+        if (amount <= 0 || level >= 100) return;
         currentExp += amount;
-        while (currentExp >= ExpToNextLevel() && level < 100)
+        while (level < 100 && currentExp >= ExpToNextLevel())
         {
             currentExp -= ExpToNextLevel();
             level++;
             RecalculateStats();
-            currentHP = stats.MaxHP;
+            currentHP = Mathf.Max(1, currentHP); // conservar vida
             AutoLearnNewMovesOnLevelUp();
             CompactMoves();
         }
+        if (level >= 100) currentExp = 0;
     }
 
+    public int ExpToNextLevelPublic() => (level >= 100) ? 0 : ExpToNextLevel();
+
+    public float ExpProgress01()
+    {
+        if (level >= 100) return 0f;
+        int need = Mathf.Max(1, ExpToNextLevel());
+        return Mathf.Clamp01(currentExp / (float)need);
+    }
+
+    private int ExpToNextLevel()
+    {
+        int nextLevel = Mathf.Min(level + 1, 100);
+        return GrowthExpToLevel(species.growthRate, nextLevel) - GrowthExpToLevel(species.growthRate, level);
+    }
+
+    private static int GrowthExpToLevel(GrowthRateGroup group, int lvl)
+    {
+        lvl = Mathf.Clamp(lvl, 1, 100);
+        switch (group)
+        {
+            case GrowthRateGroup.Fast: return Mathf.FloorToInt(0.8f * lvl * lvl * lvl);
+            case GrowthRateGroup.MediumFast: return lvl * lvl * lvl;
+            case GrowthRateGroup.MediumSlow: return Mathf.FloorToInt(1.2f * lvl * lvl * lvl - 15 * lvl * lvl + 100 * lvl - 140);
+            case GrowthRateGroup.Slow: return Mathf.FloorToInt(1.25f * lvl * lvl * lvl);
+            case GrowthRateGroup.Erratic:
+                if (lvl <= 50) return Mathf.FloorToInt(lvl * lvl * lvl * (100 - lvl) / 50f);
+                if (lvl <= 68) return Mathf.FloorToInt(lvl * lvl * lvl * (150 - lvl) / 100f);
+                if (lvl <= 98) return Mathf.FloorToInt(lvl * lvl * lvl * (1911 - 10 * lvl) / 1500f);
+                return Mathf.FloorToInt(lvl * lvl * lvl * (160 - lvl) / 100f);
+            case GrowthRateGroup.Fluctuating:
+                if (lvl <= 15) return Mathf.FloorToInt(lvl * lvl * lvl * (24 + Mathf.FloorToInt((lvl + 1) / 3f)) / 50f);
+                if (lvl <= 36) return Mathf.FloorToInt(lvl * lvl * lvl * (lvl + 14) / 50f);
+                return Mathf.FloorToInt(lvl * lvl * lvl * (lvl + 32) / 50f); // corrección oficial
+            default: return lvl * lvl * lvl;
+        }
+    }
+
+    // -------- EVs --------
     public void ApplyEVGain(int hp = 0, int atk = 0, int def = 0, int spa = 0, int spd = 0, int spe = 0)
     {
         evs.HP += hp; evs.Attack += atk; evs.Defense += def; evs.SpAttack += spa; evs.SpDefense += spd; evs.Speed += spe;
@@ -234,7 +239,7 @@ public class PokemonInstance : ISerializationCallbackReceiver
         RecalculateStats();
     }
 
-    // ---------------- Moves ----------------
+    // -------- Moves --------
     public bool LearnMove(MoveData moveData, int replaceIndex = -1)
     {
         if (moveData == null) return false;
@@ -244,20 +249,9 @@ public class PokemonInstance : ISerializationCallbackReceiver
         for (int i = 0; i < 4; i++)
         {
             if (i >= moves.Count) moves.Add(null);
-            if (moves[i] == null)
-            {
-                moves[i] = new MoveInstance(moveData);
-                CompactMoves();
-                return true;
-            }
+            if (moves[i] == null) { moves[i] = new MoveInstance(moveData); CompactMoves(); return true; }
         }
-
-        if (replaceIndex >= 0 && replaceIndex < 4)
-        {
-            moves[replaceIndex] = new MoveInstance(moveData);
-            CompactMoves();
-            return true;
-        }
+        if (replaceIndex >= 0 && replaceIndex < 4) { moves[replaceIndex] = new MoveInstance(moveData); CompactMoves(); return true; }
         return false;
     }
 
@@ -281,51 +275,32 @@ public class PokemonInstance : ISerializationCallbackReceiver
     {
         while (moves.Count < 4) moves.Add(null);
         if (a < 0 || a >= 4 || b < 0 || b >= 4 || a == b) return false;
-        var tmp = moves[a]; moves[a] = moves[b]; moves[b] = tmp;
-        CompactMoves(); return true;
+        var tmp = moves[a]; moves[a] = moves[b]; moves[b] = tmp; CompactMoves(); return true;
     }
 
     public bool MoveMove(int from, int to)
     {
         while (moves.Count < 4) moves.Add(null);
         if (from < 0 || from >= 4 || to < 0 || to >= 4 || from == to) return false;
-        var item = moves[from];
-        if (item == null) return false;
-
-        moves.RemoveAt(from);
-        moves.Insert(to, item);
+        var item = moves[from]; if (item == null) return false;
+        moves.RemoveAt(from); moves.Insert(to, item);
         while (moves.Count > 4) moves.RemoveAt(moves.Count - 1);
-        CompactMoves();
-        return true;
+        CompactMoves(); return true;
     }
 
-    /// Compacta movimientos: no nulos al principio, nulos al final.
     public bool CompactMoves()
     {
         bool changed = false;
         if (moves == null) moves = new List<MoveInstance>(4);
-
-        // Normaliza entradas inválidas
         for (int i = 0; i < moves.Count; i++)
-        {
-            if (moves[i] != null && moves[i].data == null)
-            { moves[i] = null; changed = true; }
-        }
+            if (moves[i] != null && moves[i].data == null) { moves[i] = null; changed = true; }
 
         while (moves.Count < 4) { moves.Add(null); changed = true; }
         if (moves.Count > 4) { moves.RemoveRange(4, moves.Count - 4); changed = true; }
 
         var compact = new List<MoveInstance>(4);
-        for (int i = 0; i < 4; i++)
-            if (moves[i] != null && moves[i].data != null)
-                compact.Add(moves[i]);
-
-        for (int i = 0; i < 4; i++)
-        {
-            var v = (i < compact.Count) ? compact[i] : null;
-            if (!ReferenceEquals(v, moves[i])) changed = true;
-            moves[i] = v;
-        }
+        for (int i = 0; i < 4; i++) if (moves[i] != null && moves[i].data != null) compact.Add(moves[i]);
+        for (int i = 0; i < 4; i++) { var v = (i < compact.Count) ? compact[i] : null; if (!ReferenceEquals(v, moves[i])) changed = true; moves[i] = v; }
         return changed;
     }
 
@@ -337,7 +312,6 @@ public class PokemonInstance : ISerializationCallbackReceiver
         return false;
     }
 
-    /// Garantiza que, si no hay movimientos, se pueblen desde el learnset hasta el nivel actual.
     public bool EnsureMovesForCurrentLevel()
     {
         if (HasAnyMoveData()) return false;
@@ -346,7 +320,6 @@ public class PokemonInstance : ISerializationCallbackReceiver
         return added > 0;
     }
 
-    /// Pone movimientos desde el learnset hasta el nivel indicado. Devuelve cuántos añadió.
     public int PopulateMovesFromLearnsetUpToLevel(int upToLevel)
     {
         int added = 0;
@@ -354,8 +327,7 @@ public class PokemonInstance : ISerializationCallbackReceiver
         foreach (var entry in species.learnableAttacks)
         {
             if (entry == null || entry.attackData == null) continue;
-            if (entry.level <= upToLevel)
-                if (LearnMove(entry.attackData)) added++;
+            if (entry.level <= upToLevel) if (LearnMove(entry.attackData)) added++;
         }
         return added;
     }
@@ -392,34 +364,6 @@ public class PokemonInstance : ISerializationCallbackReceiver
         if (species == null || species.possibleAbilities == null || species.possibleAbilities.Length == 0) return null;
         int idx = UnityEngine.Random.Range(0, species.possibleAbilities.Length);
         return species.possibleAbilities[idx];
-    }
-
-    private int ExpToNextLevel()
-    {
-        int nextLevel = Mathf.Min(level + 1, 100);
-        return GrowthExpToLevel(species.growthRate, nextLevel) - GrowthExpToLevel(species.growthRate, level);
-    }
-
-    private static int GrowthExpToLevel(GrowthRateGroup group, int lvl)
-    {
-        lvl = Mathf.Clamp(lvl, 1, 100);
-        switch (group)
-        {
-            case GrowthRateGroup.Fast: return Mathf.FloorToInt(0.8f * lvl * lvl * lvl);
-            case GrowthRateGroup.MediumFast: return lvl * lvl * lvl;
-            case GrowthRateGroup.MediumSlow: return Mathf.FloorToInt(1.2f * lvl * lvl * lvl - 15 * lvl * lvl + 100 * lvl - 140);
-            case GrowthRateGroup.Slow: return Mathf.FloorToInt(1.25f * lvl * lvl * lvl);
-            case GrowthRateGroup.Erratic:
-                return Mathf.FloorToInt((lvl <= 50) ? (lvl * lvl * lvl * (100 - lvl)) / 50f
-                                                     : (lvl <= 68) ? (lvl * lvl * lvl * (150 - lvl)) / 100f
-                                                     : (lvl <= 98) ? (lvl * lvl * lvl * ((1911 - 10 * lvl) / 3f)) / 500f
-                                                                   : (lvl * lvl * lvl * (160 - lvl)) / 100f);
-            case GrowthRateGroup.Fluctuating:
-                return Mathf.FloorToInt((lvl <= 15) ? (lvl * lvl * lvl * ((float)(24 + ((lvl + 1) / 3)))) / 50f
-                                                     : (lvl <= 36) ? (lvl * lvl * lvl * ((float)(lvl + 14))) / 50f
-                                                                   : (lvl * lvl * lvl * ((float)(lvl + 14))) / 50f);
-            default: return lvl * lvl * lvl;
-        }
     }
 
     private enum StatName { Attack, Defense, SpAttack, SpDefense, Speed }
@@ -465,7 +409,6 @@ public class PokemonInstance : ISerializationCallbackReceiver
         return Mathf.FloorToInt(baseVal * natureMod);
     }
 
-    // ---------------- Serialization ----------------
     void ISerializationCallbackReceiver.OnBeforeSerialize() { }
 
     void ISerializationCallbackReceiver.OnAfterDeserialize()
@@ -483,13 +426,11 @@ public class PokemonInstance : ISerializationCallbackReceiver
             RecalculateStats();
             currentHP = Mathf.Clamp(currentHP, 0, stats.MaxHP);
 
-            // Si vino sin movimientos en la carga, repuebla desde learnset hasta el nivel actual
             if (!HasAnyMoveData())
             {
                 PopulateMovesFromLearnsetUpToLevel(level);
                 CompactMoves();
             }
         }
-        // heldItem no requiere corrección; se mantiene tal cual para compatibilidad de guardados.
     }
 }

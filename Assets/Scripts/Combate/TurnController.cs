@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
@@ -28,6 +29,10 @@ public class TurnController : MonoBehaviour
     private bool playerFlinchNext;
     private bool enemyFlinchNext;
 
+    // EXP / participantes
+    private readonly HashSet<PokemonInstance> playerParticipants = new HashSet<PokemonInstance>();
+    private bool expGranted = false;
+
     public void Setup(CombatantController playerCbt, CombatantController enemyCbt)
     {
         player = playerCbt;
@@ -40,6 +45,9 @@ public class TurnController : MonoBehaviour
         IsResolving = false;
         IsWaitingForPlayerInput = false;
         ForceSwitchPending = false;
+        expGranted = false;
+        playerParticipants.Clear();
+        if (player?.Model != null) playerParticipants.Add(player.Model);
 
         BattleStageService.ResetForAll(player?.Model, enemy?.Model);
         playerFlinchNext = false;
@@ -58,7 +66,6 @@ public class TurnController : MonoBehaviour
     public void QueueCapture() { queuedCapture = true; }
     public void CancelQueuedAction() { ClearQueue(); }
 
-    // Forzado externo (KO del jugador)
     public void RequestForcedPlayerSwitch()
     {
         if (ForceSwitchPending) return;
@@ -66,7 +73,6 @@ public class TurnController : MonoBehaviour
         OnPlayerFaintedRequireSwitch?.Invoke();
     }
 
-    // NUEVO: ejecutar inmediatamente el cambio forzoso
     public void ForceSwitchImmediately(PokemonInstance replacement)
     {
         if (replacement == null || replacement.currentHP <= 0) return;
@@ -77,7 +83,6 @@ public class TurnController : MonoBehaviour
         ForceSwitchPending = false;
     }
 
-    // ----------------- TURNOS -----------------
     public IEnumerator DoPlayerTurn(Vector3 ringCenter, float combatantOffsetFromCenter)
     {
         IsResolving = true; OnPlayerTurnStart?.Invoke();
@@ -88,6 +93,7 @@ public class TurnController : MonoBehaviour
             yield return new WaitForSeconds(0.2f);
             playerStatus.OnEndOfTurn();
             PostEoTPlayerFaintCheck();
+            PostEoTEnemyFaintCheck();
             IsResolving = false;
             yield break;
         }
@@ -102,6 +108,7 @@ public class TurnController : MonoBehaviour
             ClearQueue();
             playerStatus?.OnEndOfTurn();
             PostEoTPlayerFaintCheck();
+            PostEoTEnemyFaintCheck();
             IsResolving = false;
             yield break;
         }
@@ -112,6 +119,7 @@ public class TurnController : MonoBehaviour
             ClearQueue();
             playerStatus?.OnEndOfTurn();
             PostEoTPlayerFaintCheck();
+            PostEoTEnemyFaintCheck();
             IsResolving = false;
             yield break;
         }
@@ -121,6 +129,7 @@ public class TurnController : MonoBehaviour
             yield return DoSwitch(player, queuedSwitchIn);
             ClearQueue();
             playerStatus?.OnEndOfTurn();
+            PostEoTEnemyFaintCheck();
             IsResolving = false;
             yield break;
         }
@@ -132,6 +141,7 @@ public class TurnController : MonoBehaviour
             ClearQueue();
             playerStatus?.OnEndOfTurn();
             PostEoTPlayerFaintCheck();
+            PostEoTEnemyFaintCheck();
             IsResolving = false;
             yield break;
         }
@@ -144,6 +154,7 @@ public class TurnController : MonoBehaviour
 
         playerStatus?.OnEndOfTurn();
         PostEoTPlayerFaintCheck();
+        PostEoTEnemyFaintCheck();
         IsResolving = false;
     }
 
@@ -156,6 +167,7 @@ public class TurnController : MonoBehaviour
         {
             yield return new WaitForSeconds(0.2f);
             enemyStatus.OnEndOfTurn();
+            PostEoTEnemyFaintCheck();
             IsResolving = false;
             yield break;
         }
@@ -172,6 +184,7 @@ public class TurnController : MonoBehaviour
             RequestForcedPlayerSwitch();
 
         enemyStatus?.OnEndOfTurn();
+        PostEoTEnemyFaintCheck();
         IsResolving = false;
     }
 
@@ -181,7 +194,14 @@ public class TurnController : MonoBehaviour
         RequestForcedPlayerSwitch();
     }
 
-    // ----------------- ACCIONES -----------------
+    private void PostEoTEnemyFaintCheck()
+    {
+        if (expGranted) return;
+        if (enemy?.Model == null) return;
+        if (enemy.Model.currentHP > 0) return;
+        TryGrantExpOnce();
+    }
+
     private IEnumerator DoRun()
     {
         if (player?.Model == null || enemy?.Model == null) yield break;
@@ -202,6 +222,7 @@ public class TurnController : MonoBehaviour
         if (who == null || replacement == null || replacement.currentHP <= 0) yield break;
 
         who.SwitchIn(replacement);
+        if (who == player) playerParticipants.Add(replacement);
         RebindHUDFor(who);
 
         if (who == player) ForceSwitchPending = false;
@@ -231,6 +252,9 @@ public class TurnController : MonoBehaviour
         var who = usedByPlayer ? player : enemy;
         var model = (target != null) ? target : who?.Model;
         if (model == null) yield break;
+
+        if (usedByPlayer && who != null && who.Model != null)
+            playerParticipants.Add(who.Model);
 
         bool applied = false;
 
@@ -267,13 +291,20 @@ public class TurnController : MonoBehaviour
 
         bool hit = MoveExecutor.CheckAccuracy(atkMon, defMon, data.accuracy);
 
+        if (isPlayer && atkMon != null) playerParticipants.Add(atkMon);
+
         if (hit)
         {
             var res = MoveExecutor.ResolveMove(atkMon, defMon, data);
 
-            if (res.totalDamage > 0) defMon.currentHP = Mathf.Max(0, defMon.currentHP - res.totalDamage);
-            if (res.drainHeal > 0) atkMon.currentHP = Mathf.Min(atkMon.stats.MaxHP, atkMon.currentHP + res.drainHeal);
-            if (res.recoilDamage > 0) atkMon.currentHP = Mathf.Max(0, atkMon.currentHP - res.recoilDamage);
+            if (res.totalDamage > 0)
+                defMon.currentHP = Mathf.Max(0, defMon.currentHP - res.totalDamage);
+
+            if (res.drainHeal > 0)
+                atkMon.currentHP = Mathf.Min(atkMon.stats.MaxHP, atkMon.currentHP + res.drainHeal);
+
+            if (res.recoilDamage > 0)
+                atkMon.currentHP = Mathf.Max(0, atkMon.currentHP - res.recoilDamage);
 
             if (res.targetFlinched)
             {
@@ -282,10 +313,40 @@ public class TurnController : MonoBehaviour
             }
         }
 
+        if (!expGranted && defender == enemy && enemy.Model.currentHP <= 0)
+            TryGrantExpOnce();
+
         yield return new WaitForSeconds(0.35f);
     }
 
-    // ----------------- UTIL -----------------
+    private void TryGrantExpOnce()
+    {
+        if (expGranted) return;
+        if (enemy?.Model == null) return;
+
+        var party = PokemonStorageManager.Instance ? PokemonStorageManager.Instance.PlayerParty : null;
+        var partyList = new List<PokemonInstance>();
+        if (party != null)
+        {
+            for (int i = 0; i < party.MaxCapacity; i++)
+            {
+                var p = party.GetAt(i);
+                if (p != null) partyList.Add(p);
+            }
+        }
+
+        var gains = ExperienceService.DistributeAndApply(partyList, playerParticipants, player?.Model, enemy.Model, false);
+        foreach (var g in gains)
+        {
+            if (g.levelsGained > 0)
+                Debug.Log($"[Turn][XP] {g.mon.DisplayName} +{g.expGained} EXP, +{g.levelsGained} niveles");
+            else
+                Debug.Log($"[Turn][XP] {g.mon.DisplayName} +{g.expGained} EXP");
+        }
+
+        expGranted = true;
+    }
+
     private bool HasQueuedAction()
         => queuedRun || queuedMoveIndex.HasValue || queuedUseItem.HasValue || queuedSwitchIn != null || queuedCapture;
 
