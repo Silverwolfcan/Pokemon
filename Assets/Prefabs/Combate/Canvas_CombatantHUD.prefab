@@ -424,7 +424,7 @@ MonoBehaviour:
   m_FallbackScreenDPI: 96
   m_DefaultSpriteDPI: 96
   m_DynamicPixelsPerUnit: 1
-  m_PresetInfoIsWorld: 0
+  m_PresetInfoIsWorld: 1
 --- !u!114 &1016397427825882266
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -455,12 +455,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   hpSlider: {fileID: 1817115854315767334}
+  hpFill: {fileID: 0}
   nameText: {fileID: 7526849670053697902}
   levelText: {fileID: 8274063712503306396}
   assetsRegistry: {fileID: 11400000, guid: 3a7be7600b6b4d945bedae69dfb62ad2, type: 2}
   primaryStatusIcon: {fileID: 4109317079138704973}
-  confusionGroup: {fileID: 0}
-  confusionTurnsText: {fileID: 0}
   anchorMode: 0
   anchorOverride: {fileID: 0}
   worldOffset: {x: 0, y: 1.8, z: 0}
@@ -470,6 +469,11 @@ MonoBehaviour:
   billboardToCamera: 1
   uprightBillboard: 1
   rotateLerp: 30
+  yellowThreshold: 0.5
+  redThreshold: 0.2
+  colorGreen: {r: 0.29803923, g: 0.7607843, b: 0.29803923, a: 1}
+  colorYellow: {r: 1, g: 0.75686276, b: 0.16862746, a: 1}
+  colorRed: {r: 0.8980392, g: 0.23137255, b: 0.23137255, a: 1}
   drawGizmos: 0
 --- !u!1 &5179326936845601898
 GameObject:

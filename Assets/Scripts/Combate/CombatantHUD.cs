@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
@@ -8,6 +8,7 @@ public class CombatantHUD : MonoBehaviour
 
     [Header("UI")]
     [SerializeField] private Slider hpSlider;
+    [SerializeField] private Image hpFill;              // â† asigna el Fill del slider
     [SerializeField] private TMP_Text nameText;
     [SerializeField] private TMP_Text levelText;
 
@@ -28,25 +29,33 @@ public class CombatantHUD : MonoBehaviour
     [SerializeField] private bool uprightBillboard = true;
     [SerializeField] private float rotateLerp = 30f;
 
+    [Header("HP Colors")]
+    [SerializeField, Range(0f, 1f)] private float yellowThreshold = 0.5f;
+    [SerializeField, Range(0f, 1f)] private float redThreshold = 0.2f;
+    [SerializeField] private Color colorGreen = new Color32(0x4C, 0xC2, 0x4C, 255);
+    [SerializeField] private Color colorYellow = new Color32(0xFF, 0xC1, 0x2B, 255);
+    [SerializeField] private Color colorRed = new Color32(0xE5, 0x3B, 0x3B, 255);
+
     [Header("Debug")]
     [SerializeField] private bool drawGizmos = false;
 
     // Runtime
-    private Transform target;                  // anclaje en mundo
-    private PokemonInstance model;             // modelo actual
+    private Transform target;
+    private PokemonInstance model;
+    private CombatantController owner;
     private Camera cam;
     private Canvas myCanvas;
     private StatusContainer status;
     private int maxHPCached = -1;
+    private float lastHpRatio = -1f;
 
-    // Exposición para TurnController
     public Transform Anchor => target;
 
-    // -------- API pública --------
     public void Bind(Transform targetTransform, PokemonInstance pokemon, Camera cameraOverride = null)
     {
         target = targetTransform;
-        model = pokemon;
+        owner = target ? target.GetComponentInParent<CombatantController>() : null;
+        model = pokemon != null ? pokemon : (owner != null ? owner.Model : null);
         cam = cameraOverride != null ? cameraOverride : Camera.main;
 
         if (!TryGetComponent(out myCanvas)) myCanvas = GetComponentInParent<Canvas>();
@@ -54,6 +63,9 @@ public class CombatantHUD : MonoBehaviour
             myCanvas.worldCamera = cam;
 
         status = target ? target.GetComponent<StatusContainer>() : null;
+
+        if (!hpFill && hpSlider && hpSlider.fillRect)
+            hpFill = hpSlider.fillRect.GetComponent<Image>();
 
         CacheStaticData();
         RefreshAll();
@@ -63,7 +75,6 @@ public class CombatantHUD : MonoBehaviour
         ApplyBillboard(true);
     }
 
-    // Rebind forzado desde TurnController tras un switch
     public void ForceRebind(PokemonInstance newModel)
     {
         model = newModel;
@@ -76,7 +87,18 @@ public class CombatantHUD : MonoBehaviour
     {
         if (target == null) { Destroy(gameObject); return; }
 
-        // Seguir anclaje
+        var currentOwner = target.GetComponentInParent<CombatantController>();
+        if (currentOwner != owner) owner = currentOwner;
+
+        var currentModel = owner != null ? owner.Model : model;
+        if (!ReferenceEquals(model, currentModel) && currentModel != null)
+        {
+            model = currentModel;
+            status = target.GetComponent<StatusContainer>();
+            CacheStaticData();
+            RefreshAll();
+        }
+
         var targetPos = ComputeAnchorPosition() + worldOffset;
         transform.position = smoothFollow
             ? Vector3.Lerp(transform.position, targetPos, Time.unscaledDeltaTime * followLerp)
@@ -84,10 +106,7 @@ public class CombatantHUD : MonoBehaviour
 
         ApplyBillboard(false);
 
-        // HP continuo
         RefreshHPOnly();
-
-        // Estado primario
         if (status != null) ApplyPrimaryIcon(status.Primary);
     }
 
@@ -98,6 +117,7 @@ public class CombatantHUD : MonoBehaviour
         if (nameText) nameText.text = model.DisplayName;
         if (levelText) levelText.text = "Nv. " + model.level.ToString();
         if (hpSlider) { hpSlider.minValue = 0; hpSlider.maxValue = maxHPCached; }
+        lastHpRatio = -1f; // fuerza recolor inicial
     }
 
     private void RefreshAll()
@@ -110,6 +130,19 @@ public class CombatantHUD : MonoBehaviour
     {
         if (!hpSlider || model == null) return;
         hpSlider.value = Mathf.Clamp(model.currentHP, 0, maxHPCached <= 0 ? 1 : maxHPCached);
+
+        // Color por ratio
+        if (hpFill)
+        {
+            float ratio = maxHPCached > 0 ? (model.currentHP / (float)maxHPCached) : 0f;
+            if (!Mathf.Approximately(ratio, lastHpRatio))
+            {
+                hpFill.color = (ratio <= redThreshold) ? colorRed
+                             : (ratio <= yellowThreshold) ? colorYellow
+                             : colorGreen;
+                lastHpRatio = ratio;
+            }
+        }
     }
 
     private void ApplyPrimaryIcon(StatusService.PrimaryStatus s)

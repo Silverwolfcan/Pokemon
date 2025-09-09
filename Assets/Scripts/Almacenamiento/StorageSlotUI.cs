@@ -34,7 +34,15 @@ public class StorageSlotUI : MonoBehaviour,
     [SerializeField] private TextMeshProUGUI txtLevel;
     [SerializeField] private Image imgSex;
     [SerializeField] private Slider sliderHealth;
+    [SerializeField] private Image sliderFill; // Fill del slider (opcional; se resuelve en runtime)
     [SerializeField] private TextMeshProUGUI txtHealth;
+
+    [Header("Colores HP")]
+    [SerializeField, Range(0f, 1f)] private float yellowThreshold = 0.5f;
+    [SerializeField, Range(0f, 1f)] private float redThreshold = 0.2f;
+    [SerializeField] private Color colorGreen = new Color32(0x4C, 0xC2, 0x4C, 255);
+    [SerializeField] private Color colorYellow = new Color32(0xFF, 0xC1, 0x2B, 255);
+    [SerializeField] private Color colorRed = new Color32(0xE5, 0x3B, 0x3B, 255);
 
     [Header("Held Item (opcional, solo Bolsa)")]
     [SerializeField] private TextMeshProUGUI txtHeldItemName;
@@ -79,6 +87,13 @@ public class StorageSlotUI : MonoBehaviour,
 
         InternalSetSelected(false);
         SetHeldItemUI(false, null);
+        ResolveSliderFill();
+    }
+
+    private void ResolveSliderFill()
+    {
+        if (!sliderFill && sliderHealth != null && sliderHealth.fillRect)
+            sliderFill = sliderHealth.fillRect.GetComponent<Image>();
     }
 
     public void SetContext(IPokemonStorage storage, int index)
@@ -153,6 +168,8 @@ public class StorageSlotUI : MonoBehaviour,
 
     private void RefreshParty(bool has)
     {
+        ResolveSliderFill();
+
         if (partyBackground && assets != null)
         {
             partyBackground.sprite = partyIsSelected ? assets.partyBgSelected : assets.partyBgUnselected;
@@ -168,7 +185,12 @@ public class StorageSlotUI : MonoBehaviour,
             if (imgExpRadial) { imgExpRadial.fillAmount = 0f; imgExpRadial.enabled = false; }
             if (txtLevel) txtLevel.text = "";
             if (imgSex) { imgSex.enabled = false; imgSex.sprite = null; }
-            if (sliderHealth) { sliderHealth.value = 0; sliderHealth.gameObject.SetActive(false); }
+            if (sliderHealth)
+            {
+                sliderHealth.value = 0;
+                sliderHealth.gameObject.SetActive(false);
+            }
+            if (sliderFill) sliderFill.color = colorGreen;
             if (txtHealth) txtHealth.text = "";
             SetHeldItemUI(false, null);
             return;
@@ -182,7 +204,6 @@ public class StorageSlotUI : MonoBehaviour,
             imgSprite.preserveAspect = true;
         }
 
-        // EXP radial real
         if (imgExpRadial)
         {
             bool show = current.level < 100;
@@ -199,16 +220,29 @@ public class StorageSlotUI : MonoBehaviour,
             else { imgSex.enabled = false; imgSex.sprite = null; }
         }
 
-        if (sliderHealth)
-        {
-            sliderHealth.maxValue = current.stats.MaxHP;
-            sliderHealth.value = current.currentHP;
-            sliderHealth.gameObject.SetActive(true);
-        }
-        if (txtHealth) txtHealth.text = $"{current.currentHP}/{current.stats.MaxHP}";
+        UpdateHPUI();
 
         if (current.HasHeldItem) SetHeldItemUI(true, current.HeldItem);
         else SetHeldItemUI(false, null);
+    }
+
+    private void UpdateHPUI()
+    {
+        if (!sliderHealth) return;
+
+        sliderHealth.maxValue = current.stats.MaxHP;
+        sliderHealth.value = current.currentHP;
+        sliderHealth.gameObject.SetActive(true);
+
+        if (txtHealth) txtHealth.text = $"{current.currentHP}/{current.stats.MaxHP}";
+
+        if (sliderFill)
+        {
+            float ratio = current.stats.MaxHP > 0 ? current.currentHP / (float)current.stats.MaxHP : 0f;
+            sliderFill.color = (ratio <= redThreshold) ? colorRed
+                            : (ratio <= yellowThreshold) ? colorYellow
+                            : colorGreen;
+        }
     }
 
     private void SetHeldItemUI(bool show, ItemData item)
