@@ -4,7 +4,7 @@ using UnityEngine.UI;
 using TMPro;
 
 [RequireComponent(typeof(RectTransform))]
-public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
+public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler
 {
     [Header("UI")]
     [SerializeField] private Image imgMove;       // Icono opcional del movimiento (si no hay sprite, se oculta)
@@ -31,6 +31,9 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
     private Transform dragLayer;
     private float originalAlpha = 1f;
 
+    // Índice visual que fija el grid al crear el slot
+    private int visualIndex = -1;
+
     private void Awake()
     {
         rt = GetComponent<RectTransform>();
@@ -42,6 +45,7 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
 
     public void AttachGrid(MoveGridUI g) => grid = g;
     public void DetachGrid() => grid = null;
+    public void SetVisualIndex(int vis) => visualIndex = vis;
 
     public void Setup(MoveInstance move, PokemonInstance owner, bool transparentIfEmpty)
     {
@@ -75,13 +79,10 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
 
         if (imgMove)
         {
-            if (empty)
-            {
-                imgMove.enabled = false;
-            }
+            if (empty) imgMove.enabled = false;
             else
             {
-                imgMove.enabled = imgMove.sprite != null; // si no hay sprite, oculta
+                imgMove.enabled = imgMove.sprite != null;
                 imgMove.preserveAspect = true;
             }
         }
@@ -91,10 +92,21 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
 
     private bool IsEmpty => (move == null || move.data == null);
 
-    // ---------------- Drag 2D con “fantasma” ----------------
+    // ---------- CLICK para modo combate ----------
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (eventData.button != PointerEventData.InputButton.Left) return;
+        if (grid == null || grid.Mode != MoveGridUI.GridMode.Combat) return;
+        if (IsEmpty || move.currentPP <= 0) return;
+
+        grid.NotifyClick(visualIndex);
+    }
+
+    // ---------- Drag 2D con “fantasma” (solo en modo edición) ----------
     public void OnBeginDrag(PointerEventData eventData)
     {
         if (grid == null || IsEmpty) return;
+        if (grid.Mode != MoveGridUI.GridMode.Edit) return;
 
         fromIndex = transform.GetSiblingIndex();
 
@@ -102,7 +114,6 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
         ghost = Instantiate(gameObject, dragLayer, true);
         ghost.name = $"{name}__Ghost";
 
-        // Quita scripts y raycasts del fantasma
         foreach (var ms in ghost.GetComponentsInChildren<MoveSlotUI>(true)) Destroy(ms);
         foreach (var sel in ghost.GetComponentsInChildren<Selectable>(true)) sel.interactable = false;
         foreach (var g in ghost.GetComponentsInChildren<Graphic>(true)) g.raycastTarget = false;
@@ -111,7 +122,6 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
         ghostCg.blocksRaycasts = false;
         ghostCg.alpha = 1f;
 
-        // Dim del original
         originalAlpha = cg.alpha;
         cg.alpha = dragDimAlpha;
 
@@ -120,13 +130,13 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
 
     public void OnDrag(PointerEventData eventData)
     {
-        if (!ghost || grid == null) return;
+        if (!ghost || grid == null || grid.Mode != MoveGridUI.GridMode.Edit) return;
         UpdateGhostPosition(eventData);
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
-        if (grid == null) { CleanupGhost(); return; }
+        if (grid == null || grid.Mode != MoveGridUI.GridMode.Edit) { CleanupGhost(); return; }
 
         int requested = grid.FindIndexForPointer(eventData.position, transform);
         int clamped = grid.ClampToNonNullZone(requested);
@@ -140,7 +150,7 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
     private void UpdateGhostPosition(PointerEventData ev)
     {
         if (!ghost) return;
-        ((RectTransform)ghost.transform).position = ev.position; // libre en 2D
+        ((RectTransform)ghost.transform).position = ev.position;
     }
 
     private void CleanupGhost()

@@ -1,3 +1,4 @@
+// UI/BagContextMenuUI.cs
 using System;
 using UnityEngine;
 using UnityEngine.UI;
@@ -5,83 +6,108 @@ using TMPro;
 
 public class BagContextMenuUI : MonoBehaviour
 {
-    public enum Mode { ItemActions, RemoveHeldItem }
+    public enum Mode
+    {
+        ItemActions,         // Usar / Dar / Salir
+        RemoveHeldItem,      // Quitar / Salir
+        ItemActionsOnlyUse   // Usar / Salir
+    }
 
     [Header("Botones")]
     [SerializeField] private Button btnUse;
     [SerializeField] private Button btnGive;
     [SerializeField] private Button btnExit;
 
-    [Header("Textos de los botones (opcional)")]
-    [SerializeField] private TMP_Text txtUse;
-    [SerializeField] private TMP_Text txtGive;
-    [SerializeField] private TMP_Text txtExit;
+    [Header("Textos opcionales")]
+    [SerializeField] private TMP_Text txtUse;   // si no se asigna, se intenta resolver en Awake
+    [SerializeField] private TMP_Text txtGive;  // opcional
 
-    // Eventos
     public event Action OnUseClicked;
     public event Action OnGiveClicked;
     public event Action OnExitClicked;
-    public event Action OnRemoveClicked;  // para modo RemoveHeldItem
+    public event Action OnRemoveClicked; // disparado cuando el modo es RemoveHeldItem
 
     private Canvas _canvas;
     private RectTransform _rt;
-    private Mode _mode = Mode.ItemActions;
+    private Mode _currentMode = Mode.ItemActions;
 
     private void Awake()
     {
-        _canvas = GetComponentInParent<Canvas>();
         _rt = transform as RectTransform;
+        _canvas = GetComponentInParent<Canvas>();
 
-        // Autoreferenciar textos si no se asignaron
         if (!txtUse && btnUse) txtUse = btnUse.GetComponentInChildren<TMP_Text>(true);
         if (!txtGive && btnGive) txtGive = btnGive.GetComponentInChildren<TMP_Text>(true);
-        if (!txtExit && btnExit) txtExit = btnExit.GetComponentInChildren<TMP_Text>(true);
+
+        if (btnUse) btnUse.onClick.AddListener(HandleUseOrRemove);
+        if (btnGive) btnGive.onClick.AddListener(() => OnGiveClicked?.Invoke());
+        if (btnExit) btnExit.onClick.AddListener(() => OnExitClicked?.Invoke());
 
         Hide();
-
-        // Handlers comunes; delegan según _mode
-        if (btnUse) { btnUse.onClick.RemoveAllListeners(); btnUse.onClick.AddListener(() => { if (_mode == Mode.ItemActions) OnUseClicked?.Invoke(); else OnRemoveClicked?.Invoke(); }); }
-        if (btnGive) { btnGive.onClick.RemoveAllListeners(); btnGive.onClick.AddListener(() => OnGiveClicked?.Invoke()); }
-        if (btnExit) { btnExit.onClick.RemoveAllListeners(); btnExit.onClick.AddListener(() => OnExitClicked?.Invoke()); }
     }
+
+    // Compatibilidad con versiones anteriores
+    public void Show(RectTransform anchor) => Show(anchor, Mode.ItemActions);
 
     public void Show(RectTransform anchor, Mode mode)
     {
-        _mode = mode;
+        _currentMode = mode;
+        ConfigureButtonsForMode(mode);
+
         gameObject.SetActive(true);
-
-        // Config visual por modo
-        if (_mode == Mode.ItemActions)
-        {
-            if (btnUse) btnUse.gameObject.SetActive(true);
-            if (btnGive) btnGive.gameObject.SetActive(true);
-            if (txtUse) txtUse.text = "Usar";
-            if (txtGive) txtGive.text = "Dar";
-        }
-        else // RemoveHeldItem
-        {
-            if (btnUse) btnUse.gameObject.SetActive(true);
-            if (btnGive) btnGive.gameObject.SetActive(false);
-            if (txtUse) txtUse.text = "Quitar";
-        }
-
-        // Posición junto al ancla (a la derecha)
-        if (_rt && anchor && _canvas)
+        if (_rt && anchor)
         {
             Vector3[] corners = new Vector3[4];
             anchor.GetWorldCorners(corners);
-            Vector3 worldRightCenter = (corners[2] + corners[3]) * 0.5f;
-            var cam = _canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : _canvas.worldCamera;
+            var worldPos = (corners[2] + corners[3]) * 0.5f; // centro del borde derecho
 
-            RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                _canvas.transform as RectTransform,
-                RectTransformUtility.WorldToScreenPoint(cam, worldRightCenter),
-                cam,
-                out var local);
+            var cam = _canvas && _canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : _canvas.worldCamera;
+            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(cam, worldPos);
 
-            _rt.anchoredPosition = local + new Vector2(160f, 0f);
+            var parentRt = _rt.parent as RectTransform;
+            if (parentRt && RectTransformUtility.ScreenPointToLocalPointInRectangle(parentRt, screenPoint, cam, out var local))
+            {
+                _rt.anchoredPosition = local + new Vector2(160f, 0f);
+            }
         }
     }
 
     public void Hide() => gameObject.SetActive(false);
+
+    private void HandleUseOrRemove()
+    {
+        if (_currentMode == Mode.RemoveHeldItem) OnRemoveClicked?.Invoke();
+        else OnUseClicked?.Invoke();
+    }
+
+    private void ConfigureButtonsForMode(Mode mode)
+    {
+        switch (mode)
+        {
+            case Mode.ItemActions:
+                SetActive(btnUse, true);
+                SetActive(btnGive, true);
+                SetActive(btnExit, true);
+                SetText(txtUse, "Usar");
+                SetText(txtGive, "Dar");
+                break;
+
+            case Mode.RemoveHeldItem:
+                SetActive(btnUse, true);
+                SetActive(btnGive, false);
+                SetActive(btnExit, true);
+                SetText(txtUse, "Quitar");
+                break;
+
+            case Mode.ItemActionsOnlyUse:
+                SetActive(btnUse, true);
+                SetActive(btnGive, false);
+                SetActive(btnExit, true);
+                SetText(txtUse, "Usar");
+                break;
+        }
+    }
+
+    private static void SetActive(Behaviour b, bool v) { if (b) b.gameObject.SetActive(v); }
+    private static void SetText(TMP_Text t, string s) { if (t) t.text = s; }
 }

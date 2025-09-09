@@ -1,3 +1,4 @@
+// UI/CombatantHUD.cs
 using System;
 using System.Linq;
 using System.Reflection;
@@ -14,21 +15,20 @@ public class CombatantHUD : MonoBehaviour
     [SerializeField] private TMP_Text nameText;
     [SerializeField] private TMP_Text levelText;
 
+    [Header("Estado")]
+    [SerializeField] private UIAssetsRegistry assetsRegistry;
+    [SerializeField] private Image primaryStatusIcon; // Se activa solo cuando hay estado
+
     [Header("Anclaje / Seguimiento")]
     [SerializeField] private AnchorMode anchorMode = AnchorMode.RendererBoundsTop;
-    [Tooltip("Si se asigna, ancla el HUD a este transform (por ejemplo, un child 'HUDAnchor' en la criatura).")]
     [SerializeField] private Transform anchorOverride;
-    [Tooltip("Offset en mundo aplicado al punto de anclaje (metros).")]
     [SerializeField] private Vector3 worldOffset = new Vector3(0, 0.25f, 0);
-    [Tooltip("Altura extra cuando se usa RendererBoundsTop (metros).")]
     [SerializeField] private float boundsExtraHeight = 0.15f;
-    [Tooltip("Seguimiento suave (lerp). Si lo desactivas, el HUD sigue exacto al anclaje sin latencia).")]
     [SerializeField] private bool smoothFollow = true;
     [SerializeField] private float followLerp = 20f;
 
     [Header("Billboard")]
     [SerializeField] private bool billboardToCamera = true;
-    [Tooltip("Si está activo, el HUD rota hacia la cámara sin inclinarse (mantiene vertical).")]
     [SerializeField] private bool uprightBillboard = true;
     [SerializeField] private float rotateLerp = 30f;
 
@@ -36,10 +36,11 @@ public class CombatantHUD : MonoBehaviour
     [SerializeField] private bool drawGizmos = false;
 
     // Runtime
-    private Transform target;     // Transform real del Pokémon
-    private object model;         // PokemonInstance
+    private Transform target;
+    private object model;
     private Camera cam;
     private Canvas myCanvas;
+    private StatusContainer status;
 
     // Reflection cache
     private FieldInfo fi_currentHP, fi_level, fi_species, fi_stats;
@@ -67,14 +68,32 @@ public class CombatantHUD : MonoBehaviour
             return;
         }
 
+        status = target.GetComponent<StatusContainer>();
+        if (status != null)
+        {
+            status.OnPrimaryChanged += HandlePrimaryChanged;
+        }
+
         CacheMembers();
         CacheStaticData();
         RefreshImmediate();
 
-        // Posiciona inmediatamente para evitar “salto” inicial
+        // Inicial de estado
+        if (status != null) HandlePrimaryChanged(status.Primary);
+        else HandlePrimaryChanged(StatusService.PrimaryStatus.None);
+
+        // Posición inicial
         Vector3 anchorPos = ComputeAnchorPosition();
         transform.position = anchorPos + worldOffset;
         ApplyBillboard(true);
+    }
+
+    private void OnDestroy()
+    {
+        if (status != null)
+        {
+            status.OnPrimaryChanged -= HandlePrimaryChanged;
+        }
     }
 
     // ---- Ciclo ----
@@ -86,18 +105,13 @@ public class CombatantHUD : MonoBehaviour
             return;
         }
 
-        // Seguir anclaje
         Vector3 targetPos = ComputeAnchorPosition() + worldOffset;
-
         if (smoothFollow)
             transform.position = Vector3.Lerp(transform.position, targetPos, Time.unscaledDeltaTime * followLerp);
         else
             transform.position = targetPos;
 
-        // Billboard
         ApplyBillboard(false);
-
-        // HP
         RefreshHPOnly();
     }
 
@@ -115,16 +129,14 @@ public class CombatantHUD : MonoBehaviour
         }
         else
         {
-            // Mira directamente a la cámara (sin aplanar)
             Vector3 dir = (transform.position - cam.transform.position);
             if (dir.sqrMagnitude < 1e-6f) return;
             targetRot = Quaternion.LookRotation(dir.normalized, Vector3.up);
         }
 
-        if (instant)
-            transform.rotation = targetRot;
-        else
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.unscaledDeltaTime * rotateLerp);
+        transform.rotation = instant
+            ? targetRot
+            : Quaternion.Slerp(transform.rotation, targetRot, Time.unscaledDeltaTime * rotateLerp);
     }
 
     // ---- Anclaje ----
@@ -139,7 +151,6 @@ public class CombatantHUD : MonoBehaviour
                 return new Vector3(b.center.x, b.max.y + boundsExtraHeight, b.center.z);
         }
 
-        // Fallback: base del transform + offset Y mínimo
         return target.position + Vector3.up * (boundsExtraHeight > 0f ? boundsExtraHeight : 0.15f);
     }
 
@@ -152,7 +163,6 @@ public class CombatantHUD : MonoBehaviour
             return false;
         }
 
-        // Ignora renderers desactivados o con tamaño cero
         var valid = rends.Where(r => r.enabled && r.bounds.size.sqrMagnitude > 0f).ToArray();
         if (valid.Length == 0)
         {
@@ -182,7 +192,31 @@ public class CombatantHUD : MonoBehaviour
         if (hpSlider) hpSlider.value = Mathf.Clamp(hp, 0, Mathf.Max(1, maxHPCached));
     }
 
-    // ---- Reflection ----
+    // ---- Estado UI ----
+    private void HandlePrimaryChanged(StatusService.PrimaryStatus s)
+    {
+        if (primaryStatusIcon == null)
+            return;
+
+        if (s == StatusService.PrimaryStatus.None)
+        {
+            // Sin estado: ocultar icono y opcionalmente desactivar su GO
+            primaryStatusIcon.enabled = false;
+            primaryStatusIcon.gameObject.SetActive(false);
+            return;
+        }
+
+        // Con estado: activar y asignar sprite/color desde el registry
+        Sprite spr = assetsRegistry != null ? assetsRegistry.GetStatusSprite(s) : null;
+        Color col = assetsRegistry != null ? assetsRegistry.GetStatusColor(s) : Color.white;
+
+        primaryStatusIcon.gameObject.SetActive(true);
+        primaryStatusIcon.enabled = spr != null;
+        primaryStatusIcon.sprite = spr;
+        primaryStatusIcon.color = col;
+    }
+
+    // ---- Reflection base de modelo ----
     private void CacheMembers()
     {
         var t = model.GetType();

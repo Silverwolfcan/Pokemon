@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 7868301826896848605}
   - component: {fileID: 2073063924419092264}
+  - component: {fileID: -4336951187701573540}
   m_Layer: 0
   m_Name: EncounterController
   m_TagString: Untagged
@@ -51,3 +52,18 @@ MonoBehaviour:
   turnIntroDelay: 0.35
   combatantHUDPrefab: {fileID: 2434942383750131880, guid: 39045cd9639d9ef40a1ec2407c270a34, type: 3}
   hudOffset: {x: 0, y: 2, z: 0}
+  evictionClearance: 1.5
+  evictionSpeed: 6
+  evictionScanInterval: 0.75
+--- !u!114 &-4336951187701573540
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9126107073081557876}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: be40a459a1acca0409173068b1dfa864, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

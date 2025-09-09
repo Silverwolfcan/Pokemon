@@ -1,3 +1,4 @@
+// UI/UIAssetsRegistry.cs
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -21,11 +22,22 @@ public class UIAssetsRegistry : ScriptableObject
         public Color color;
     }
 
+    [Serializable]
+    public struct PrimaryStatusSprite
+    {
+        public StatusService.PrimaryStatus status; // Burn/Poison/Sleep/Paralysis/Freeze/None
+        public Sprite sprite;
+        public Color color;
+    }
+
     [Header("Sprites por PokemonType (especie)")]
     public List<PokemonTypeSprite> pokemonTypeSprites = new List<PokemonTypeSprite>();
 
     [Header("Sprites por ElementType (movimientos)")]
     public List<ElementTypeSprite> elementTypeSprites = new List<ElementTypeSprite>();
+
+    [Header("Estados primarios")]
+    public List<PrimaryStatusSprite> primaryStatusSprites = new List<PrimaryStatusSprite>();
 
     [Header("Sexo")]
     public Sprite maleSprite;
@@ -38,6 +50,7 @@ public class UIAssetsRegistry : ScriptableObject
 
     private Dictionary<PokemonType, PokemonTypeSprite> _mapPokemonType;
     private Dictionary<ElementType, ElementTypeSprite> _mapElementType;
+    private Dictionary<StatusService.PrimaryStatus, PrimaryStatusSprite> _mapPrimaryStatus;
 
     void OnEnable()
     {
@@ -46,38 +59,46 @@ public class UIAssetsRegistry : ScriptableObject
 
         _mapElementType = new Dictionary<ElementType, ElementTypeSprite>();
         foreach (var ts in elementTypeSprites) _mapElementType[ts.type] = ts;
+
+        _mapPrimaryStatus = new Dictionary<StatusService.PrimaryStatus, PrimaryStatusSprite>();
+        foreach (var ps in primaryStatusSprites) _mapPrimaryStatus[ps.status] = ps;
     }
 
     // --- Para especie (PokemonType) ---
     public Sprite GetTypeSprite(PokemonType t)
     {
         if (t == PokemonType.None) return null;
-        if (_mapPokemonType != null && _mapPokemonType.TryGetValue(t, out var ts) && ts.sprite)
-            return ts.sprite;
-        return null;
+        return (_mapPokemonType != null && _mapPokemonType.TryGetValue(t, out var ts)) ? ts.sprite : null;
     }
 
     public Color GetTypeColor(PokemonType t)
     {
         if (t == PokemonType.None) return Color.white;
-        if (_mapPokemonType != null && _mapPokemonType.TryGetValue(t, out var ts))
-            return ts.color;
-        return Color.white;
+        return (_mapPokemonType != null && _mapPokemonType.TryGetValue(t, out var ts)) ? ts.color : Color.white;
     }
 
     // --- Para movimientos (ElementType) ---
     public Sprite GetTypeSprite(ElementType t)
     {
-        if (_mapElementType != null && _mapElementType.TryGetValue(t, out var ts) && ts.sprite)
-            return ts.sprite;
-        return null;
+        return (_mapElementType != null && _mapElementType.TryGetValue(t, out var ts)) ? ts.sprite : null;
     }
 
     public Color GetTypeColor(ElementType t)
     {
-        if (_mapElementType != null && _mapElementType.TryGetValue(t, out var ts))
-            return ts.color;
-        return Color.white;
+        return (_mapElementType != null && _mapElementType.TryGetValue(t, out var ts)) ? ts.color : Color.white;
+    }
+
+    // --- Para estados primarios ---
+    public Sprite GetStatusSprite(StatusService.PrimaryStatus s)
+    {
+        if (s == StatusService.PrimaryStatus.None) return null;
+        return (_mapPrimaryStatus != null && _mapPrimaryStatus.TryGetValue(s, out var ps)) ? ps.sprite : null;
+    }
+
+    public Color GetStatusColor(StatusService.PrimaryStatus s)
+    {
+        if (s == StatusService.PrimaryStatus.None) return Color.white;
+        return (_mapPrimaryStatus != null && _mapPrimaryStatus.TryGetValue(s, out var ps)) ? ps.color : Color.white;
     }
 
     public Sprite GetGenderSprite(Gender g)
@@ -90,3 +111,10 @@ public class UIAssetsRegistry : ScriptableObject
         }
     }
 }
+
+/*
+Asignaciones en el Inspector:
+- Completar la lista “Estados primarios” con tus sprites:
+  * Burn, Poison, Sleep, Paralysis, Freeze. Color opcional por estado.
+- El resto de listas (tipos/elementos) como ya las usabas.
+*/

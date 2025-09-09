@@ -20,5 +20,18 @@ MonoBehaviour:
   power: 0
   accuracy: 100
   pp: 40
-  hasSecondaryEffect: 0
+  priority: 0
+  makesContact: 0
+  hasSecondaryEffect: 1
+  secondaryChance: 100
+  effectTarget: 0
+  statusToApply: 0
+  stageDelta:
+    attack: -1
+    defense: 0
+    spAttack: 0
+    spDefense: 0
+    speed: 0
+    accuracy: 0
+    evasion: 0
   secondaryEffectDescription: 

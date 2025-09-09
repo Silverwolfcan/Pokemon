@@ -1,29 +1,49 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 public class MoveGridUI : MonoBehaviour
 {
+    public enum GridMode { Edit, Combat }
+
     [Header("Refs")]
-    [SerializeField] private Transform content;        // contenedor con GridLayoutGroup
-    [SerializeField] private GameObject slotPrefab;    // prefab con MoveSlotUI (referencias asignadas)
+    [SerializeField] private Transform content;
+    [SerializeField] private GameObject slotPrefab;
+
+    [Header("Modo")]
+    [SerializeField] private GridMode mode = GridMode.Edit;
+
+    [Header("Turn Controller (solo combate)")]
+    [SerializeField] private TurnController turn; // opcional
 
     public RectTransform ContentRT => (RectTransform)content;
     public Canvas RootCanvas { get; private set; }
+    public GridMode Mode => mode;
+
+    public event Action<int> OnMoveChosen;
+    public event Action<int> OnMoveSelected;
 
     private PokemonInstance current;
-
-    // Mapeo visual (0..3) -> índice real (0..3). -1 = hueco
     private readonly List<int> visibleToModel = new();
     private int nonNullVisualCount = 0;
-
     private readonly List<MoveSlotUI> liveSlots = new();
 
     private void Awake()
     {
         if (!content) content = transform;
         RootCanvas = GetComponentInParent<Canvas>()?.rootCanvas;
-        if (!RootCanvas)
-            Debug.LogWarning("[MoveGridUI] RootCanvas es null.");
+        if (!turn) turn = ResolveTurn();
+    }
+    private void Update()
+    {
+        if (!turn) turn = ResolveTurn();
+    }
+    private TurnController ResolveTurn()
+    {
+        var cs = CombatService.Instance;
+        var t = cs != null ? cs.CurrentTurn : null;
+        if (t == null) t = FindAnyObjectByType<TurnController>(FindObjectsInactive.Exclude);
+        return t;
     }
 
     private void OnDisable()
@@ -37,19 +57,12 @@ public class MoveGridUI : MonoBehaviour
         current = p;
         Refresh();
     }
+    public void SetMode(GridMode m) => mode = m;
 
     public void Refresh()
     {
-        if (!content)
-        {
-            Debug.LogError("[MoveGridUI] Falta asignar 'content'.");
-            return;
-        }
-        if (!slotPrefab)
-        {
-            Debug.LogError("[MoveGridUI] Falta asignar 'slotPrefab' (Prefab_MoveSlot con MoveSlotUI).");
-            return;
-        }
+        if (!content) { Debug.LogError("[MoveGridUI] Falta 'content'."); return; }
+        if (!slotPrefab) { Debug.LogError("[MoveGridUI] Falta 'slotPrefab'."); return; }
 
         foreach (var s in liveSlots) if (s) s.DetachGrid();
         liveSlots.Clear();
@@ -61,10 +74,8 @@ public class MoveGridUI : MonoBehaviour
 
         if (current == null) return;
 
-        // Normaliza lista (mueve nulls al final manteniendo orden)
         current.CompactMoves();
 
-        // Recolectar no-nulos reales
         var nonNull = new List<(int modelIndex, MoveInstance move)>(4);
         for (int i = 0; i < 4 && i < current.Moves.Count; i++)
         {
@@ -73,19 +84,14 @@ public class MoveGridUI : MonoBehaviour
         }
         nonNullVisualCount = nonNull.Count;
 
-        // Construye siempre 4 celdas visuales (2x2)
         for (int vis = 0; vis < 4; vis++)
         {
             var go = Instantiate(slotPrefab, content);
             var slot = go.GetComponent<MoveSlotUI>();
-            if (!slot)
-            {
-                Debug.LogError("[MoveGridUI] El slotPrefab no tiene MoveSlotUI.");
-                Destroy(go);
-                continue;
-            }
+            if (!slot) { Debug.LogError("[MoveGridUI] El slotPrefab no tiene MoveSlotUI."); Destroy(go); continue; }
 
             slot.AttachGrid(this);
+            slot.SetVisualIndex(vis);
 
             if (vis < nonNull.Count)
             {
@@ -98,21 +104,14 @@ public class MoveGridUI : MonoBehaviour
                 visibleToModel.Add(-1);
                 slot.Setup(null, current, transparentIfEmpty: true);
             }
-
             liveSlots.Add(slot);
         }
     }
 
-    // ---------- APIs usadas por MoveSlotUI durante drag ----------
-    /// Devuelve el índice visual (0..N-1) del hijo cuya caja contiene el puntero.
-    /// Si no cae dentro de ninguna caja, devuelve el más cercano por centro.
     public int FindIndexForPointer(Vector2 screenPos, Transform ignoreChild)
     {
-        int bestIndex = -1;
-        float bestDist = float.MaxValue;
-
-        Camera cam = RootCanvas && RootCanvas.renderMode != RenderMode.ScreenSpaceOverlay
-            ? RootCanvas.worldCamera : null;
+        int bestIndex = -1; float bestDist = float.MaxValue;
+        Camera cam = RootCanvas && RootCanvas.renderMode != RenderMode.ScreenSpaceOverlay ? RootCanvas.worldCamera : null;
 
         for (int i = 0; i < ContentRT.childCount; i++)
         {
@@ -122,20 +121,16 @@ public class MoveGridUI : MonoBehaviour
             if (RectTransformUtility.RectangleContainsScreenPoint(child, screenPos, cam))
                 return i;
 
-            // distancia al centro como fallback
             Vector3[] corners = new Vector3[4];
             child.GetWorldCorners(corners);
             var center = 0.5f * (corners[0] + corners[2]);
             float d = (new Vector2(center.x, center.y) - screenPos).sqrMagnitude;
             if (d < bestDist) { bestDist = d; bestIndex = i; }
         }
-
-        // si no hay hijos (no debería ocurrir) o todos ignorados
         if (bestIndex < 0) bestIndex = Mathf.Clamp(ContentRT.childCount - 1, 0, int.MaxValue);
         return bestIndex;
     }
 
-    /// Restringe el índice visual de destino para no soltar “después” del último movimiento real.
     public int ClampToNonNullZone(int requestedIndex)
     {
         if (nonNullVisualCount <= 0) return 0;
@@ -145,10 +140,11 @@ public class MoveGridUI : MonoBehaviour
 
     public void NotifyDrop(int fromVisual, int toVisual)
     {
+        if (mode != GridMode.Edit) return;
         if (current == null) { Refresh(); return; }
 
         int fromModel = (fromVisual >= 0 && fromVisual < visibleToModel.Count) ? visibleToModel[fromVisual] : -1;
-        if (fromModel < 0) { Refresh(); return; } // no arrastramos vacíos
+        if (fromModel < 0) { Refresh(); return; }
 
         int clampedVis = ClampToNonNullZone(toVisual);
         clampedVis = Mathf.Clamp(clampedVis, 0, visibleToModel.Count - 1);
@@ -156,9 +152,7 @@ public class MoveGridUI : MonoBehaviour
         int targetModel = visibleToModel[clampedVis];
 
         if (targetModel >= 0 && targetModel != fromModel)
-        {
             current.SwapMoves(fromModel, targetModel);
-        }
         else
         {
             int firstNull = FirstNullIndex(current);
@@ -170,7 +164,23 @@ public class MoveGridUI : MonoBehaviour
         try { SaveManager.Instance?.ManualSave(); } catch { }
         Refresh();
     }
-    // --------------------------------------------------------------
+
+    public void NotifyClick(int visualIndex)
+    {
+        if (mode != GridMode.Combat) return;
+
+        int modelIndex = (visualIndex >= 0 && visualIndex < visibleToModel.Count) ? visibleToModel[visualIndex] : -1;
+        if (modelIndex < 0 || current == null) return;
+
+        var mv = (modelIndex < current.Moves.Count) ? current.Moves[modelIndex] : null;
+        if (IsNullMove(mv) || mv.currentPP <= 0) return;
+
+        var t = turn ?? ResolveTurn();
+        t?.QueueMove(modelIndex);
+
+        OnMoveChosen?.Invoke(modelIndex);
+        OnMoveSelected?.Invoke(modelIndex);
+    }
 
     private static bool IsNullMove(MoveInstance mv) => (mv == null || mv.data == null);
     private static int FirstNullIndex(PokemonInstance p)
