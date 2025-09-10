@@ -29,7 +29,6 @@ public class TurnController : MonoBehaviour
     private bool playerFlinchNext;
     private bool enemyFlinchNext;
 
-    // EXP / participantes
     private readonly HashSet<PokemonInstance> playerParticipants = new HashSet<PokemonInstance>();
     private bool expGranted = false;
 
@@ -40,6 +39,10 @@ public class TurnController : MonoBehaviour
 
         playerStatus = player?.WorldTransform ? player.WorldTransform.GetComponent<StatusContainer>() : null;
         enemyStatus = enemy?.WorldTransform ? enemy.WorldTransform.GetComponent<StatusContainer>() : null;
+
+        // Hooks de estado para log (opcional si existen)
+        if (playerStatus) playerStatus.EnableLogCallbacks(true);
+        if (enemyStatus) enemyStatus.EnableLogCallbacks(true);
 
         ClearQueue();
         IsResolving = false;
@@ -222,6 +225,8 @@ public class TurnController : MonoBehaviour
         if (who == null || replacement == null || replacement.currentHP <= 0) yield break;
 
         who.SwitchIn(replacement);
+        CombatLogPanel.LogSwitch(replacement, who == player);
+
         if (who == player) playerParticipants.Add(replacement);
         RebindHUDFor(who);
 
@@ -272,6 +277,8 @@ public class TurnController : MonoBehaviour
 
             var r = ItemEffectsUtility.ApplyHealingItem(model, heal, mvIndex);
             applied = r == ItemUseResult.Applied;
+            if (applied)
+                CombatLogPanel.LogCustom(model.species?.pokemonSprite, model.DisplayName, $"Usa {heal.itemName}", "", usedByPlayer);
         }
 
         if (applied) TryConsumeFromInventory(item, 1);
@@ -290,15 +297,20 @@ public class TurnController : MonoBehaviour
         if (!inst.TryConsumePP(1)) yield break;
 
         bool hit = MoveExecutor.CheckAccuracy(atkMon, defMon, data.accuracy);
+        string moveName = data.moveName ?? data.name;
 
         if (isPlayer && atkMon != null) playerParticipants.Add(atkMon);
 
+        int dmgDone = 0;
         if (hit)
         {
             var res = MoveExecutor.ResolveMove(atkMon, defMon, data);
 
             if (res.totalDamage > 0)
+            {
+                dmgDone = Mathf.Min(defMon.currentHP, res.totalDamage);
                 defMon.currentHP = Mathf.Max(0, defMon.currentHP - res.totalDamage);
+            }
 
             if (res.drainHeal > 0)
                 atkMon.currentHP = Mathf.Min(atkMon.stats.MaxHP, atkMon.currentHP + res.drainHeal);
@@ -312,6 +324,8 @@ public class TurnController : MonoBehaviour
                 else playerFlinchNext = true;
             }
         }
+
+        CombatLogPanel.LogMove(atkMon, moveName, dmgDone, attacker == player, hit);
 
         if (!expGranted && defender == enemy && enemy.Model.currentHP <= 0)
             TryGrantExpOnce();
@@ -338,10 +352,7 @@ public class TurnController : MonoBehaviour
         var gains = ExperienceService.DistributeAndApply(partyList, playerParticipants, player?.Model, enemy.Model, false);
         foreach (var g in gains)
         {
-            if (g.levelsGained > 0)
-                Debug.Log($"[Turn][XP] {g.mon.DisplayName} +{g.expGained} EXP, +{g.levelsGained} niveles");
-            else
-                Debug.Log($"[Turn][XP] {g.mon.DisplayName} +{g.expGained} EXP");
+            // opcional: mostrar subida de nivel aquí si quieres
         }
 
         expGranted = true;
