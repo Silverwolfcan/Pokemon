@@ -33,15 +33,13 @@ public class PlayerController : MonoBehaviour
     public LayerMask movementMask;
 
     [Header("Animación")]
-    public Animator animator; // arrástralo en el inspector
+    public Animator animator;
     private static readonly int AnimSpeed = Animator.StringToHash("Speed");
     private static readonly int AnimIsAiming = Animator.StringToHash("IsAiming");
     private static readonly int AnimThrow = Animator.StringToHash("Throw");
 
     [Header("Controles de disparo")]
-    [Tooltip("Permite lanzar con clic IZQUIERDO mientras apuntas.")]
     public bool useLeftClickToThrow = true;
-    [Tooltip("Permite lanzar al SOLTAR clic DERECHO (mientras apuntas).")]
     public bool useRightReleaseToThrow = true;
 
     private CharacterController character;
@@ -50,7 +48,7 @@ public class PlayerController : MonoBehaviour
 
     private bool isAiming = false;
     private float defaultFov = 60f;
-    private bool isThrowing = false; // mientras el clip Throw está en curso
+    private bool isThrowing = false;
 
     private PlayerCreatureBehavior activeSummonedPokemon;
     private string activePokemonID;
@@ -68,10 +66,7 @@ public class PlayerController : MonoBehaviour
         if (crosshair) crosshair.SetActive(false);
     }
 
-    void Start()
-    {
-        EnsureAnimatorLayers();
-    }
+    void Start() { EnsureAnimatorLayers(); }
 
     void Update()
     {
@@ -84,31 +79,26 @@ public class PlayerController : MonoBehaviour
 
         ValidateActiveSummon();
 
-        // Apuntado con RMB mantenido
         SetAiming(Input.GetMouseButton(1));
-
         HandleMovement();
 
-        // Disparo: LMB down o RMB up (configurable), solo si estamos apuntando
         bool leftFire = useLeftClickToThrow && Input.GetMouseButtonDown(0);
-        bool rightFire = useRightReleaseToThrow && Input.GetMouseButtonUp(1); // soltar botón derecho
+        bool rightFire = useRightReleaseToThrow && Input.GetMouseButtonUp(1);
 
         if (isAiming && (leftFire || rightFire))
         {
             if (itemSelector != null && itemSelector.CurrentMode == SelectorMode.Pokeball)
             {
-                TryTriggerThrow(); // trigger de animación; ReleaseBall hará el spawn real
+                TryTriggerThrow();
             }
             else
             {
-                Debug.Log("[PlayerController] No estás en modo Pokéballs. Pulsa R para cambiar.");
                 if (activeSummonedPokemon == null) SummonPokemon();
                 else HandleSummonedPokemonAction();
             }
         }
 
-        if (Input.GetKeyDown(KeyCode.R))
-            ToggleSelectorMode();
+        if (Input.GetKeyDown(KeyCode.R)) ToggleSelectorMode();
     }
 
     private void HandleMovement()
@@ -119,18 +109,11 @@ public class PlayerController : MonoBehaviour
         Vector3 moveDir = (transform.right * h + transform.forward * v).normalized;
         Vector3 moveVel = moveDir * moveSpeed;
 
-        // CharacterController activo
         if (character != null && character.enabled && character.gameObject.activeInHierarchy)
-        {
             character.SimpleMove(moveVel);
-        }
         else
-        {
-            // Fallback por si no tienes CC
             transform.position += moveVel * Time.deltaTime;
-        }
 
-        // Rotación cámara
         rotX += Input.GetAxis("Mouse X") * mouseSensitivity;
         rotY -= Input.GetAxis("Mouse Y") * mouseSensitivity;
         rotY = Mathf.Clamp(rotY, minY, maxY);
@@ -138,14 +121,12 @@ public class PlayerController : MonoBehaviour
         transform.rotation = Quaternion.Euler(0, rotX, 0);
         if (cameraTransform) cameraTransform.localRotation = Quaternion.Euler(rotY, 0, 0);
 
-        // FOV apuntando
         if (cam)
         {
             float target = isAiming ? zoomFov : defaultFov;
             cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, target, Time.deltaTime * zoomSpeed);
         }
 
-        // Velocidad horizontal para el Animator
         float speedForAnim = moveVel.magnitude;
         if (character != null && character.enabled && character.gameObject.activeInHierarchy)
         {
@@ -155,43 +136,42 @@ public class PlayerController : MonoBehaviour
         UpdateAnimatorSpeed(speedForAnim);
     }
 
-    private void UpdateAnimatorSpeed(float speed)
-    {
-        if (animator) animator.SetFloat(AnimSpeed, speed);
-    }
+    private void UpdateAnimatorSpeed(float speed) { if (animator) animator.SetFloat(AnimSpeed, speed); }
 
     private void SetAiming(bool aiming)
     {
         if (isAiming == aiming) return;
         isAiming = aiming;
-
         if (crosshair) crosshair.SetActive(isAiming);
         if (animator) animator.SetBool(AnimIsAiming, isAiming);
     }
 
+    // ← NUEVO: reset inmediato de zoom y estado de apuntado
+    public void ForceExitAimAndResetFov()
+    {
+        isAiming = false;
+        if (crosshair) crosshair.SetActive(false);
+        if (animator) animator.SetBool(AnimIsAiming, false);
+        if (cam) cam.fieldOfView = defaultFov;
+    }
+
     private void TryTriggerThrow()
     {
-        if (Time.time - lastThrowTime < throwCooldown)
-        {
-            Debug.Log("[PlayerController] Cooldown de lanzamiento.");
-            return;
-        }
+        if (Time.time - lastThrowTime < throwCooldown) return;
 
         if (animator == null)
         {
-            // Sin animador: lanzar directamente
             TryThrowPokeball();
             return;
         }
 
         if (isThrowing) return;
-
         animator.ResetTrigger(AnimThrow);
         animator.SetTrigger(AnimThrow);
-        isThrowing = true; // se libera en ReleaseBall()
+        isThrowing = true;
     }
 
-    /// <summary>Llamado por el Animation Event del clip Throw (nombre exacto del evento: ReleaseBall)</summary>
+    /// Animation Event: ReleaseBall
     public void ReleaseBall()
     {
         TryThrowPokeball();
@@ -203,21 +183,9 @@ public class PlayerController : MonoBehaviour
         if (Time.time - lastThrowTime < throwCooldown) return;
 
         var entry = itemSelector != null ? itemSelector.GetSelectedBallEntry() : null;
-        if (entry == null || entry.item == null)
-        {
-            Debug.LogWarning("[PlayerController] No hay ninguna Pokéball seleccionada.");
-            return;
-        }
-        if (entry.quantity <= 0)
-        {
-            Debug.Log("[PlayerController] Sin unidades de: " + entry.item.name);
-            return;
-        }
-        if (!itemSelector.TryConsumeSelectedBall())
-        {
-            Debug.Log("[PlayerController] No se pudo consumir Pokéball.");
-            return;
-        }
+        if (entry == null || entry.item == null) return;
+        if (entry.quantity <= 0) return;
+        if (!itemSelector.TryConsumeSelectedBall()) return;
 
         lastThrowTime = Time.time;
 
@@ -236,8 +204,7 @@ public class PlayerController : MonoBehaviour
     private void SummonPokemon()
     {
         var pi = itemSelector != null ? itemSelector.GetCurrentPokemon() : null;
-        if (pi == null) return;
-        if (pi.currentHP <= 0) { Debug.Log("[PlayerController] Pokémon debilitado."); return; }
+        if (pi == null || pi.currentHP <= 0) return;
 
         Vector3 origin = cam ? cam.transform.position : transform.position;
         Vector3 dir = cam ? cam.transform.forward : transform.forward;
@@ -269,7 +236,6 @@ public class PlayerController : MonoBehaviour
             }
             return;
         }
-        // Aquí podrías dar órdenes al Pokémon activo.
     }
 
     private void ToggleSelectorMode()
@@ -294,7 +260,6 @@ public class PlayerController : MonoBehaviour
         if (react >= 0) animator.SetLayerWeight(react, 1f);
     }
 
-    // ---- helpers activo ----
     public PokemonInstance GetActivePokemon()
     {
         if (string.IsNullOrEmpty(activePokemonID)) return null;
@@ -327,4 +292,19 @@ public class PlayerController : MonoBehaviour
         activePokemonID = null;
         itemSelector?.RefreshCapturedPokemon();
     }
+
+    public void RecallActiveSummonedToBall()
+    {
+        if (activeSummonedPokemon != null)
+        {
+            Destroy(activeSummonedPokemon.gameObject);
+            ClearActiveSummonRef();
+            return;
+        }
+        var leftovers = FindObjectsOfType<PlayerCreatureBehavior>(true);
+        foreach (var pcb in leftovers) Destroy(pcb.gameObject);
+        ClearActiveSummonRef();
+    }
+
+    public PlayerCreatureBehavior GetActiveSummonedBehavior() => activeSummonedPokemon;
 }

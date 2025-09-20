@@ -31,7 +31,6 @@ public class BagPanel : MonoBehaviour
     [Header("Modo combate")]
     [SerializeField] private bool excludeBallsInCombat = true;
     [SerializeField] private bool requireUsableInBattle = true;
-    [SerializeField] private bool openContextMenuOnLeftClickInCombat = true;
 
     private readonly List<RowRef> rows = new();
     private RowRef selectedRow;
@@ -49,6 +48,7 @@ public class BagPanel : MonoBehaviour
     private InventoryManager IM => InventoryManager.Instance;
     private PokemonStorageManager SM => PokemonStorageManager.Instance;
 
+    // ---- API pública ----
     public void OpenForCombat(System.Action<ItemData, PokemonInstance> onUse, System.Action onClose)
     {
         combatMode = true;
@@ -67,6 +67,7 @@ public class BagPanel : MonoBehaviour
         gameObject.SetActive(false);
     }
 
+    // ---- Ciclo ----
     private void Awake()
     {
         es = EventSystem.current ?? FindAnyObjectByType<EventSystem>();
@@ -129,6 +130,18 @@ public class BagPanel : MonoBehaviour
 
     private void Update()
     {
+        // Cerrar menú con rueda o clic izquierdo fuera
+        if (contextMenu && contextMenu.IsOpen)
+        {
+            if (Input.mouseScrollDelta.sqrMagnitude > 0f) { contextMenu.Hide(); return; }
+            if (Input.GetMouseButtonDown(0))
+            {
+                if (!contextMenu.ContainsScreenPoint(Input.mousePosition))
+                    contextMenu.Hide();
+            }
+        }
+
+        // Abrir solo con clic derecho
         if (Input.GetMouseButtonDown(1))
         {
             var hitRow = RaycastFirst<InventoryItemRowUI>();
@@ -143,6 +156,7 @@ public class BagPanel : MonoBehaviour
                 }
             }
 
+            // Clic derecho en slot de party: quitar objeto (fuera de combate)
             if (!combatMode)
             {
                 var slot = RaycastFirst<StorageSlotUI>();
@@ -160,9 +174,11 @@ public class BagPanel : MonoBehaviour
         }
     }
 
+    // ---- UI ----
     private void OnTabChanged(int tabIndex)
     {
         currentCategory = TabIndexToCategory(tabIndex);
+        contextMenu?.Hide();
         RebuildList();
     }
 
@@ -180,8 +196,7 @@ public class BagPanel : MonoBehaviour
         if (combatMode)
         {
             if (excludeBallsInCombat) filtered = filtered.Where(e => e.item.category != ItemCategory.Pokeball);
-            if (requireUsableInBattle)
-                filtered = filtered.Where(e => e.item is HealingItemData hi && hi.usableInBattle);
+            if (requireUsableInBattle) filtered = filtered.Where(e => e.item is HealingItemData hi && hi.usableInBattle);
         }
 
         var list = filtered.ToList();
@@ -210,8 +225,7 @@ public class BagPanel : MonoBehaviour
     private void OnRowLeftClick(RowRef rr)
     {
         SetSelectedRow(rr);
-        if (combatMode && openContextMenuOnLeftClickInCombat && contextMenu != null)
-            contextMenu.Show(rr.rect, BagContextMenuUI.Mode.ItemActionsOnlyUse);
+        contextMenu?.Hide();
     }
 
     private void SetSelectedRow(RowRef rr)
@@ -229,22 +243,32 @@ public class BagPanel : MonoBehaviour
         if (txtDescription) txtDescription.text = "";
     }
 
+    // ---- Acciones de menú ----
     private void OnUseFromMenu()
     {
         var entry = selectedRow?.entry;
-        if (entry == null || entry.item == null) { SetFeedback("Selecciona un objeto."); contextMenu?.Hide(); return; }
-        if (selectedPokemon == null) { SetFeedback("Selecciona un Pokémon del equipo."); contextMenu?.Hide(); return; }
+        if (entry == null || entry.item == null) { SetFeedback("Selecciona un objeto."); return; }
+
+        // Asegurar target si no hay selección
+        if (selectedPokemon == null) AutoSelectFirstPokemon();
+        if (selectedPokemon == null) { SetFeedback("Selecciona un Pokémon del equipo."); return; }
 
         if (combatMode)
         {
             if (excludeBallsInCombat && entry.item.category == ItemCategory.Pokeball)
-            { SetFeedback("Las Balls se usan desde Captura."); contextMenu?.Hide(); return; }
+            { SetFeedback("Las Balls se usan desde Captura."); return; }
 
-            if (requireUsableInBattle && entry.item is HealingItemData hi && !hi.usableInBattle)
-            { SetFeedback("Este objeto no puede usarse en combate."); contextMenu?.Hide(); return; }
+            if (requireUsableInBattle && entry.item is HealingItemData hi0 && !hi0.usableInBattle)
+            { SetFeedback("Este objeto no puede usarse en combate."); return; }
 
-            if (!(entry.item is HealingItemData))
-            { SetFeedback("Sólo curativos durante el combate."); contextMenu?.Hide(); return; }
+            if (!(entry.item is HealingItemData heal))
+            { SetFeedback("Sólo curativos durante el combate."); return; }
+
+            if (!WouldApplyHealingNow(selectedPokemon, heal))
+            {
+                SetFeedback("No surte efecto.");
+                return; // no cierra, no consume turno
+            }
 
             combatUseCallback?.Invoke(entry.item, selectedPokemon);
             contextMenu?.Hide();
@@ -252,22 +276,55 @@ public class BagPanel : MonoBehaviour
             return;
         }
 
-        // fuera de combate
-        if (entry.item is HealingItemData heal)
+        // Fuera de combate: autoselección de objetivo válido si el actual no sirve
+        if (entry.item is HealingItemData healOut)
         {
-            var res = ItemEffectsUtility.ApplyHealingItem(selectedPokemon, heal, -1); // ← nombre correcto
+            var target = selectedPokemon;
+
+            if (!WouldApplyHealingNow(target, healOut))
+            {
+                var alt = FindBestTargetFor(healOut);
+                if (alt != null) { selectedPokemon = alt; target = alt; }
+            }
+
+            if (!WouldApplyHealingNow(target, healOut))
+            {
+                SetFeedback("No surte efecto en ningún Pokémon.");
+                return;
+            }
+
+            int mvIndex = -1;
+            if (healOut.effect == HealingEffectType.RestorePPSingleFixed ||
+                healOut.effect == HealingEffectType.RestorePPSingleFull)
+            {
+                mvIndex = FirstMoveNeedingPP(target);
+                if (mvIndex < 0)
+                {
+                    SetFeedback("No surte efecto.");
+                    return;
+                }
+            }
+
+            var res = ItemEffectsUtility.ApplyHealingItem(target, healOut, mvIndex);
             if (res == ItemUseResult.Applied)
             {
-                InventoryManager.Instance?.UseItem(heal);
-                SetFeedback($"Usaste {entry.item.itemName} en {selectedPokemon.DisplayName}.");
+                InventoryManager.Instance?.UseItem(healOut);
+                SetFeedback($"Usaste {entry.item.itemName} en {target.DisplayName}.");
                 partyGrid?.Refresh();
                 RebuildList();
+                contextMenu?.Hide();
             }
-            else SetFeedback("No surte efecto.");
+            else
+            {
+                SetFeedback("No surte efecto.");
+                // no cerrar para permitir elegir otro
+            }
         }
-        else SetFeedback("Este objeto no puede usarse aquí.");
-
-        contextMenu?.Hide();
+        else
+        {
+            SetFeedback("Este objeto no puede usarse aquí.");
+            // no cerrar
+        }
     }
 
     private void OnGiveFromMenu()
@@ -305,6 +362,7 @@ public class BagPanel : MonoBehaviour
         contextMenu?.Hide();
     }
 
+    // ---- Util ----
     private void AutoSelectFirstPokemon()
     {
         var party = SM ? SM.PlayerParty : null;
@@ -314,6 +372,40 @@ public class BagPanel : MonoBehaviour
             var p = party.GetAt(i);
             if (p != null) { selectedPokemon = p; break; }
         }
+    }
+
+    private PokemonInstance FindBestTargetFor(HealingItemData heal)
+    {
+        var party = SM ? SM.PlayerParty : null;
+        if (party == null) return null;
+
+        // Orden de preferencia: el primero que realmente se beneficie
+        PokemonInstance best = null;
+        for (int i = 0; i < party.MaxCapacity; i++)
+        {
+            var p = party.GetAt(i);
+            if (p == null) continue;
+
+            if (!WouldApplyHealingNow(p, heal)) continue;
+
+            if (heal.effect == HealingEffectType.RestorePPSingleFixed ||
+                heal.effect == HealingEffectType.RestorePPSingleFull)
+            {
+                if (FirstMoveNeedingPP(p) >= 0) { best = p; break; }
+                continue;
+            }
+
+            if (heal.effect == HealingEffectType.RestorePPAllFixed ||
+                heal.effect == HealingEffectType.RestorePPAllFull)
+            {
+                if (AnyMoveNeedsPP(p)) { best = p; break; }
+                continue;
+            }
+
+            // HP o revive u otros curativos
+            best = p; break;
+        }
+        return best;
     }
 
     private T RaycastFirst<T>() where T : Component
@@ -344,6 +436,57 @@ public class BagPanel : MonoBehaviour
         7 => ItemCategory.KeyItem,
         _ => ItemCategory.Healing
     };
+
+    // ----- Prevalidación de curativos -----
+    private bool WouldApplyHealingNow(PokemonInstance p, HealingItemData heal)
+    {
+        if (p == null || heal == null) return false;
+
+        switch (heal.effect)
+        {
+            case HealingEffectType.HealFixed:
+            case HealingEffectType.HealPercent:
+            case HealingEffectType.HealToFull:
+                return p.currentHP > 0 && p.currentHP < p.stats.MaxHP;
+
+            case HealingEffectType.ReviveToHalf:
+            case HealingEffectType.ReviveToFull:
+                return p.currentHP <= 0;
+
+            case HealingEffectType.RestorePPSingleFixed:
+            case HealingEffectType.RestorePPSingleFull:
+                return p.currentHP > 0 && FirstMoveNeedingPP(p) >= 0;
+
+            case HealingEffectType.RestorePPAllFixed:
+            case HealingEffectType.RestorePPAllFull:
+                return p.currentHP > 0 && AnyMoveNeedsPP(p);
+
+            default:
+                return true;
+        }
+    }
+
+    private int FirstMoveNeedingPP(PokemonInstance p)
+    {
+        if (p == null || p.Moves == null) return -1;
+        for (int i = 0; i < p.Moves.Count; i++)
+        {
+            var mv = p.Moves[i];
+            if (mv != null && mv.data != null && mv.currentPP < mv.maxPP) return i;
+        }
+        return -1;
+    }
+
+    private bool AnyMoveNeedsPP(PokemonInstance p)
+    {
+        if (p == null || p.Moves == null) return false;
+        for (int i = 0; i < p.Moves.Count; i++)
+        {
+            var mv = p.Moves[i];
+            if (mv != null && mv.data != null && mv.currentPP < mv.maxPP) return true;
+        }
+        return false;
+    }
 
     private sealed class RowRef
     {

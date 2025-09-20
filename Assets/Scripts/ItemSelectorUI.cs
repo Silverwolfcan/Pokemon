@@ -18,6 +18,10 @@ public class ItemSelectorUI : MonoBehaviour
     public TextMeshProUGUI txtNameBalls;
     public TextMeshProUGUI txtCountBalls;     // "xN"
 
+    [Header("Fondos prev/next - Pokéballs")]
+    public Image bgPreviousBall;    // opcional
+    public Image bgNextBall;        // opcional
+
     [Header("UI - Pokémon")]
     public GameObject panelPokemon;
     public Image imgPreviousPokemon;
@@ -26,9 +30,13 @@ public class ItemSelectorUI : MonoBehaviour
     public TextMeshProUGUI txtNamePokemon;
     public TextMeshProUGUI txtLevelPokemon;
 
+    [Header("Fondos prev/next - Pokémon")]
+    public Image bgPreviousPokemon; // opcional
+    public Image bgNextPokemon;     // opcional
+
     [Header("Colores")]
     public Color colorDisponible = Color.white;                    // normal
-    public Color colorAgotado = new Color(1f, 1f, 1f, 0.35f);      // activo (gris)
+    public Color colorAgotado = new Color(1f, 1f, 1f, 0.35f);      // sin stock o activo
     public Color colorDebilitado = new Color(1f, 0.2f, 0.2f, 1f);  // KO (rojo)
 
     [Header("Input")]
@@ -50,14 +58,13 @@ public class ItemSelectorUI : MonoBehaviour
     private bool captureLock = false;
     public bool IsCaptureLocked => captureLock;
 
-    // --------------- Ciclo de vida ---------------
     private void Awake()
     {
         playerController = FindObjectOfType<PlayerController>();
         RebuildBalls();
         RebuildParty();
         ClampIndices();
-        UpdateUI();               // primer pintado
+        UpdateUI();
     }
 
     private void OnEnable()
@@ -75,20 +82,18 @@ public class ItemSelectorUI : MonoBehaviour
 
     private System.Collections.IEnumerator DeferredInitialRefresh()
     {
-        yield return null; // siguiente frame
+        yield return null;
         RefreshBalls();
         RefreshCapturedPokemon();
     }
 
     private void Update()
     {
-        // Toggle de modo solo si NO estamos bloqueados por captura
         if (!captureLock && Input.GetKeyDown(toggleKey))
         {
             SetMode(currentMode == SelectorMode.Pokeball ? SelectorMode.Pokemon : SelectorMode.Pokeball);
         }
 
-        // --- Navegación por rueda del ratón (no cíclica) ---
         float scroll = Input.mouseScrollDelta.y;
         if (Mathf.Abs(scroll) > 0.01f)
         {
@@ -96,12 +101,12 @@ public class ItemSelectorUI : MonoBehaviour
             {
                 if (pokeballInventory.Count > 0)
                 {
-                    if (scroll > 0f) ballIndex = Mathf.Max(0, ballIndex - 1);                                  // arriba → anterior
-                    else ballIndex = Mathf.Min(pokeballInventory.Count - 1, ballIndex + 1);       // abajo → siguiente
+                    if (scroll > 0f) ballIndex = Mathf.Max(0, ballIndex - 1);
+                    else ballIndex = Mathf.Min(pokeballInventory.Count - 1, ballIndex + 1);
                     UpdateUI_Balls();
                 }
             }
-            else // Pokémon
+            else
             {
                 if (partyList.Count > 0)
                 {
@@ -113,16 +118,14 @@ public class ItemSelectorUI : MonoBehaviour
         }
     }
 
-    // --------------- API pública ---------------
+    // ---------- API ----------
     public void SetMode(SelectorMode mode)
     {
-        // Si estamos en captura, forzamos siempre Pokéballs
         if (captureLock) mode = SelectorMode.Pokeball;
         currentMode = mode;
         UpdateUI();
     }
 
-    /// Bloquea/desbloquea el selector en modo Pokéballs (para “Capturar” en combate).
     public void SetCaptureLock(bool locked)
     {
         captureLock = locked;
@@ -131,11 +134,7 @@ public class ItemSelectorUI : MonoBehaviour
             currentMode = SelectorMode.Pokeball;
             RefreshBalls();
         }
-        else
-        {
-            // al desbloquear, no tocamos el modo; el jugador decidirá con Q
-            UpdateUI();
-        }
+        else UpdateUI();
     }
 
     public PokeballData GetSelectedBallData()
@@ -150,7 +149,6 @@ public class ItemSelectorUI : MonoBehaviour
         return pokeballInventory[ballIndex];
     }
 
-    /// Consume 1 unidad de la ball seleccionada si hay cantidad>0. Actualiza UI. Devuelve true si consumió.
     public bool TryConsumeSelectedBall()
     {
         var entry = GetSelectedBallEntry();
@@ -183,7 +181,7 @@ public class ItemSelectorUI : MonoBehaviour
         UpdateUI_Balls();
     }
 
-    // --------------- Data builders ---------------
+    // ---------- Data ----------
     private void RebuildBalls()
     {
         pokeballInventory.Clear();
@@ -195,7 +193,7 @@ public class ItemSelectorUI : MonoBehaviour
         {
             if (entry == null || entry.item == null) continue;
             if (entry.item.category != ItemCategory.Pokeball) continue;
-            if (!entry.unlocked) continue; // mostramos aunque quantity sea 0 (se grisearán)
+            if (!entry.unlocked) continue;
             if (entry.item is PokeballData)
                 pokeballInventory.Add(entry);
         }
@@ -210,7 +208,7 @@ public class ItemSelectorUI : MonoBehaviour
         var party = PokemonStorageManager.Instance?.PlayerParty;
         if (party == null) return;
 
-        var slots = party.ToList(); // 6 slots con null en huecos
+        var slots = party.ToList();
         foreach (var p in slots)
         {
             if (p == null || p.species == null) continue;
@@ -226,7 +224,7 @@ public class ItemSelectorUI : MonoBehaviour
         pokemonIndex = Mathf.Clamp(pokemonIndex, 0, Mathf.Max(0, partyList.Count - 1));
     }
 
-    // --------------- UI ---------------
+    // ---------- UI ----------
     public void UpdateUI()
     {
         if (panelBalls) panelBalls.SetActive(currentMode == SelectorMode.Pokeball);
@@ -259,6 +257,8 @@ public class ItemSelectorUI : MonoBehaviour
             if (imgActiveBall) { imgActiveBall.enabled = false; imgActiveBall.sprite = null; }
             if (imgPreviousBall) { imgPreviousBall.enabled = false; imgPreviousBall.sprite = null; }
             if (imgNextBall) { imgNextBall.enabled = false; imgNextBall.sprite = null; }
+            if (bgPreviousBall) bgPreviousBall.enabled = false;
+            if (bgNextBall) bgNextBall.enabled = false;
             if (txtNameBalls) txtNameBalls.text = "—";
             if (txtCountBalls) txtCountBalls.text = "x0";
             return;
@@ -284,15 +284,18 @@ public class ItemSelectorUI : MonoBehaviour
         {
             if (ballIndex > 0)
             {
-                var prevIcon = IconFromItem(pokeballInventory[ballIndex - 1]);
+                var prevEntry = pokeballInventory[ballIndex - 1];
+                var prevIcon = IconFromItem(prevEntry);
                 imgPreviousBall.enabled = (prevIcon != null);
                 imgPreviousBall.sprite = prevIcon;
-                imgPreviousBall.color = colorDisponible;
+                imgPreviousBall.color = (prevEntry.quantity > 0) ? colorDisponible : colorAgotado;
+                if (bgPreviousBall) bgPreviousBall.enabled = true;
             }
             else
             {
                 imgPreviousBall.enabled = false;
                 imgPreviousBall.sprite = null;
+                if (bgPreviousBall) bgPreviousBall.enabled = false;
             }
         }
 
@@ -301,15 +304,18 @@ public class ItemSelectorUI : MonoBehaviour
         {
             if (ballIndex < pokeballInventory.Count - 1)
             {
-                var nextIcon = IconFromItem(pokeballInventory[ballIndex + 1]);
+                var nextEntry = pokeballInventory[ballIndex + 1];
+                var nextIcon = IconFromItem(nextEntry);
                 imgNextBall.enabled = (nextIcon != null);
                 imgNextBall.sprite = nextIcon;
-                imgNextBall.color = colorDisponible;
+                imgNextBall.color = (nextEntry.quantity > 0) ? colorDisponible : colorAgotado;
+                if (bgNextBall) bgNextBall.enabled = true;
             }
             else
             {
                 imgNextBall.enabled = false;
                 imgNextBall.sprite = null;
+                if (bgNextBall) bgNextBall.enabled = false;
             }
         }
     }
@@ -323,6 +329,8 @@ public class ItemSelectorUI : MonoBehaviour
             HideImage(imgPreviousPokemon);
             HideImage(imgActivePokemon);
             HideImage(imgNextPokemon);
+            if (bgPreviousPokemon) bgPreviousPokemon.enabled = false;
+            if (bgNextPokemon) bgNextPokemon.enabled = false;
             if (txtNamePokemon) txtNamePokemon.text = "—";
             if (txtLevelPokemon) txtLevelPokemon.text = "—";
             return;
@@ -334,23 +342,21 @@ public class ItemSelectorUI : MonoBehaviour
         bool isActive = active != null && selected.UniqueID == active.UniqueID;
         bool isFainted = selected.currentHP <= 0;
 
-        // Color y texto de estado
         Color centerTint = colorDisponible;
         string stateText = $"Nv. {selected.level}";
 
         if (isFainted)
         {
-            centerTint = colorDebilitado;      // rojo si KO
+            centerTint = colorDebilitado;
             stateText = "Debilitado";
             isActive = false;
         }
         else if (isActive)
         {
-            centerTint = colorAgotado;         // gris para activo
+            centerTint = colorAgotado;
             stateText = "Activo";
         }
 
-        // Centro
         ShowImage(imgActivePokemon, selected.species.pokemonSprite, centerTint);
         if (txtNamePokemon) txtNamePokemon.text = selected.species.pokemonName;
         if (txtLevelPokemon) txtLevelPokemon.text = stateText;
@@ -363,8 +369,13 @@ public class ItemSelectorUI : MonoBehaviour
             bool prevKO = prev.currentHP <= 0;
             Color tint = prevKO ? colorDebilitado : (prevIsActive ? colorAgotado : colorDisponible);
             ShowImage(imgPreviousPokemon, prev.species.pokemonSprite, tint);
+            if (bgPreviousPokemon) bgPreviousPokemon.enabled = true;
         }
-        else HideImage(imgPreviousPokemon);
+        else
+        {
+            HideImage(imgPreviousPokemon);
+            if (bgPreviousPokemon) bgPreviousPokemon.enabled = false;
+        }
 
         // Next
         if (pokemonIndex < partyList.Count - 1)
@@ -374,8 +385,13 @@ public class ItemSelectorUI : MonoBehaviour
             bool nextKO = next.currentHP <= 0;
             Color tint = nextKO ? colorDebilitado : (nextIsActive ? colorAgotado : colorDisponible);
             ShowImage(imgNextPokemon, next.species.pokemonSprite, tint);
+            if (bgNextPokemon) bgNextPokemon.enabled = true;
         }
-        else HideImage(imgNextPokemon);
+        else
+        {
+            HideImage(imgNextPokemon);
+            if (bgNextPokemon) bgNextPokemon.enabled = false;
+        }
     }
 
     private static void ShowImage(Image img, Sprite s, Color tint)
@@ -391,5 +407,27 @@ public class ItemSelectorUI : MonoBehaviour
         if (!img) return;
         img.enabled = false;
         img.sprite = null;
+    }
+
+    public bool FocusPokemonById(string uniqueID)
+    {
+        RebuildParty();
+        ClampIndices();
+        if (partyList.Count == 0)
+        {
+            SetMode(SelectorMode.Pokemon);
+            UpdateUI_Pokemon();
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(uniqueID))
+        {
+            int idx = partyList.FindIndex(p => p != null && p.UniqueID == uniqueID);
+            if (idx >= 0) pokemonIndex = idx;
+        }
+
+        SetMode(SelectorMode.Pokemon);
+        UpdateUI_Pokemon();
+        return true;
     }
 }

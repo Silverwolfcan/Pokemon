@@ -1,3 +1,4 @@
+ï»¿// UI/MoveSlotUI.cs
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -7,31 +8,29 @@ using TMPro;
 public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler
 {
     [Header("UI")]
-    [SerializeField] private Image imgMove;       // Icono opcional del movimiento (si no hay sprite, se oculta)
-    [SerializeField] private Image imgMoveType;   // Icono del ElementType (desde UIAssetsRegistry)
+    [SerializeField] private Image imgMove;       // Icono opcional
+    [SerializeField] private Image imgMoveType;   // Tipo elemental
     [SerializeField] private TextMeshProUGUI txtName;
     [SerializeField] private TextMeshProUGUI txtPP;
 
     [Header("Assets")]
-    [SerializeField] private UIAssetsRegistry assets; // Para obtener sprite del ElementType
+    [SerializeField] private UIAssetsRegistry assets;
 
     [Header("Apariencia")]
     [SerializeField, Range(0f, 1f)] private float emptyAlpha = 0.25f;
-    [SerializeField, Range(0f, 1f)] private float dragDimAlpha = 0.5f; // dim del slot original durante drag
+    [SerializeField, Range(0f, 1f)] private float dragDimAlpha = 0.5f;
 
     private CanvasGroup cg;
     private MoveGridUI grid;
     private MoveInstance move;
     private PokemonInstance owner;
 
-    // Drag state
     private int fromIndex = -1;
     private RectTransform rt;
     private GameObject ghost;
     private Transform dragLayer;
     private float originalAlpha = 1f;
 
-    // Índice visual que fija el grid al crear el slot
     private int visualIndex = -1;
 
     private void Awake()
@@ -70,6 +69,7 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
             }
             else
             {
+                // Usa sprites por ElementType (movimientos)
                 var spType = assets ? assets.GetTypeSprite(move.data.type) : null;
                 imgMoveType.enabled = spType != null;
                 imgMoveType.sprite = spType;
@@ -102,11 +102,11 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
         grid.NotifyClick(visualIndex);
     }
 
-    // ---------- Drag 2D con “fantasma” (solo en modo edición) ----------
+    // ---------- Drag (ediciÃ³n y aprendibles) ----------
     public void OnBeginDrag(PointerEventData eventData)
     {
         if (grid == null || IsEmpty) return;
-        if (grid.Mode != MoveGridUI.GridMode.Edit) return;
+        if (grid.Mode != MoveGridUI.GridMode.Edit && grid.Mode != MoveGridUI.GridMode.Learnset) return;
 
         fromIndex = transform.GetSiblingIndex();
 
@@ -130,18 +130,33 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
 
     public void OnDrag(PointerEventData eventData)
     {
-        if (!ghost || grid == null || grid.Mode != MoveGridUI.GridMode.Edit) return;
+        if (!ghost || grid == null) return;
         UpdateGhostPosition(eventData);
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
-        if (grid == null || grid.Mode != MoveGridUI.GridMode.Edit) { CleanupGhost(); return; }
+        if (grid == null) { CleanupGhost(); return; }
 
-        int requested = grid.FindIndexForPointer(eventData.position, transform);
-        int clamped = grid.ClampToNonNullZone(requested);
+        var target = MoveGridUI.FindGridAtScreenPoint(eventData.position, grid.RootCanvas, MoveGridUI.GridMode.Edit);
 
-        grid.NotifyDrop(fromIndex, clamped);
+        if (target != null)
+        {
+            int dstVis = target.FindIndexForPointer(eventData.position, null);
+
+            if (grid == target && grid.Mode == MoveGridUI.GridMode.Edit)
+            {
+                int clamped = grid.ClampToNonNullZone(dstVis);
+                grid.NotifyDropWithinGrid(fromIndex, clamped);
+            }
+            else
+            {
+                if (grid.Mode == MoveGridUI.GridMode.Learnset && move != null && move.data != null)
+                {
+                    target.ApplyIncomingMoveFromLearnset(move.data, dstVis);
+                }
+            }
+        }
 
         CleanupGhost();
         fromIndex = -1;
@@ -177,3 +192,4 @@ public class MoveSlotUI : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDr
         return t;
     }
 }
+

@@ -1,4 +1,6 @@
 // UI/PokemonTeamPanel.cs
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -7,16 +9,21 @@ using TMPro;
 public class PokemonTeamPanel : MonoBehaviour
 {
     [Header("Grids")]
-    [SerializeField] private StorageGridUI partyGrid;   // Modo Party
-    [SerializeField] private StorageGridUI pcGrid;      // Modo PCBox
+    [SerializeField] private StorageGridUI partyGrid;
+    [SerializeField] private StorageGridUI pcGrid;
 
     [Header("PC Box")]
     [SerializeField] private TMP_Text txtBoxTitle;
     [SerializeField] private Button btnPrevBox;
     [SerializeField] private Button btnNextBox;
 
-    [Header("Moves")]
-    [SerializeField] private MoveGridUI moveGrid;       // 4 MoveSlotUI hijos
+    [Header("Movimientos actuales")]
+    [SerializeField] private MoveGridUI moveGrid; // grid de 4
+
+    [Header("Aprendibles")]
+    [SerializeField] private Button btnToggleLearnset;
+    [SerializeField] private GameObject learnsetRoot;   // contenedor visible
+    [SerializeField] private MoveGridUI learnsetGrid;   // grid de aprendibles
 
     [Header("Stats")]
     [SerializeField] private UIAssetsRegistry assets;
@@ -27,16 +34,13 @@ public class PokemonTeamPanel : MonoBehaviour
     [SerializeField] private Image imgType2;
     [SerializeField] private TMP_Text txtAbility;
     [SerializeField] private TMP_Text txtHeldItem;
-    [SerializeField] private PokemonRadarChart radar;   // Opcional
+    [SerializeField] private PokemonRadarChart radar;
 
     [Header("Opciones")]
     [SerializeField] private bool autoSelectFirstOnOpen = true;
-
-    [Header("Hover-paging mientras arrastras")]
     [SerializeField, Min(0.05f)] private float hoverFirstDelay = 0.40f;
     [SerializeField, Min(0.05f)] private float hoverRepeatDelay = 0.25f;
 
-    // Estado
     private PokemonInstance current;
     private PokemonStorageManager SM => PokemonStorageManager.Instance;
 
@@ -49,17 +53,19 @@ public class PokemonTeamPanel : MonoBehaviour
     private void OnEnable()
     {
         rootCanvas = GetComponentInParent<Canvas>();
-        uiCamera = rootCanvas != null && rootCanvas.renderMode != RenderMode.ScreenSpaceOverlay
-            ? rootCanvas.worldCamera : null;
+        uiCamera = rootCanvas && rootCanvas.renderMode != RenderMode.ScreenSpaceOverlay ? rootCanvas.worldCamera : null;
 
         if (btnPrevBox) { btnPrevBox.onClick.RemoveAllListeners(); btnPrevBox.onClick.AddListener(PrevBox); }
         if (btnNextBox) { btnNextBox.onClick.RemoveAllListeners(); btnNextBox.onClick.AddListener(NextBox); }
 
-        if (partyGrid) partyGrid.SetMode(StorageGridUI.GridMode.Party);
-        if (pcGrid) pcGrid.SetMode(StorageGridUI.GridMode.PCBox);
+        if (partyGrid) { partyGrid.SetMode(StorageGridUI.GridMode.Party); partyGrid.onPokemonClicked.RemoveAllListeners(); partyGrid.onPokemonClicked.AddListener(OnSelectPokemon); }
+        if (pcGrid) { pcGrid.SetMode(StorageGridUI.GridMode.PCBox); pcGrid.onPokemonClicked.RemoveAllListeners(); pcGrid.onPokemonClicked.AddListener(OnSelectPokemon); }
 
-        if (partyGrid) { partyGrid.onPokemonClicked.RemoveAllListeners(); partyGrid.onPokemonClicked.AddListener(OnSelectPokemon); }
-        if (pcGrid) { pcGrid.onPokemonClicked.RemoveAllListeners(); pcGrid.onPokemonClicked.AddListener(OnSelectPokemon); }
+        if (btnToggleLearnset)
+        {
+            btnToggleLearnset.onClick.RemoveAllListeners();
+            btnToggleLearnset.onClick.AddListener(ToggleLearnsetPanel);
+        }
 
         if (SM != null)
         {
@@ -67,12 +73,12 @@ public class PokemonTeamPanel : MonoBehaviour
             SM.OnPcBoxChanged += HandlePcChanged;
         }
 
+        HideLearnset();
         RefreshAll();
         if (autoSelectFirstOnOpen) SelectFirstPartyPokemon();
-
+        UpdateBoxButtons();
         hoverZone = HoverZone.None;
         hoverTimer = 0f;
-        UpdateBoxButtons();
     }
 
     private void OnDisable()
@@ -84,55 +90,62 @@ public class PokemonTeamPanel : MonoBehaviour
         }
         if (partyGrid) partyGrid.onPokemonClicked.RemoveAllListeners();
         if (pcGrid) pcGrid.onPokemonClicked.RemoveAllListeners();
+        if (btnToggleLearnset) btnToggleLearnset.onClick.RemoveAllListeners();
 
-        // Limpieza explícita al SALIR del panel
         ClearSelectionAndUI();
-
+        HideLearnset();
         hoverZone = HoverZone.None;
         hoverTimer = 0f;
     }
 
     private void Update()
     {
+        // Auto-paginación PCBox al arrastrar
         var dd = DragDropController.Instance;
         bool dragging = dd != null && dd.IsDraggingAny;
         if (!dragging || (btnPrevBox == null && btnNextBox == null))
         {
             hoverZone = HoverZone.None;
             hoverTimer = 0f;
-            return;
+        }
+        else
+        {
+            Vector2 mp = Input.mousePosition;
+            bool overPrev = btnPrevBox && btnPrevBox.gameObject.activeInHierarchy &&
+                            RectTransformUtility.RectangleContainsScreenPoint(btnPrevBox.GetComponent<RectTransform>(), mp, uiCamera);
+            bool overNext = btnNextBox && btnNextBox.gameObject.activeInHierarchy &&
+                            RectTransformUtility.RectangleContainsScreenPoint(btnNextBox.GetComponent<RectTransform>(), mp, uiCamera);
+
+            var newZone = overPrev ? HoverZone.Prev : (overNext ? HoverZone.Next : HoverZone.None);
+            if (newZone != hoverZone)
+            {
+                hoverZone = newZone;
+                hoverTimer = hoverZone == HoverZone.None ? 0f : hoverFirstDelay;
+            }
+            if (hoverZone != HoverZone.None)
+            {
+                hoverTimer -= Time.unscaledDeltaTime;
+                if (hoverTimer <= 0f)
+                {
+                    if (hoverZone == HoverZone.Prev) PrevBox(); else NextBox();
+                    hoverTimer = hoverRepeatDelay;
+                }
+            }
         }
 
-        Vector2 mp = Input.mousePosition;
-        bool prevVisible = btnPrevBox && btnPrevBox.gameObject.activeInHierarchy;
-        bool nextVisible = btnNextBox && btnNextBox.gameObject.activeInHierarchy;
-
-        bool overPrev = prevVisible && RectTransformUtility.RectangleContainsScreenPoint(btnPrevBox.GetComponent<RectTransform>(), mp, uiCamera);
-        bool overNext = nextVisible && RectTransformUtility.RectangleContainsScreenPoint(btnNextBox.GetComponent<RectTransform>(), mp, uiCamera);
-
-        HoverZone newZone = overPrev ? HoverZone.Prev : (overNext ? HoverZone.Next : HoverZone.None);
-        if (newZone != hoverZone)
+        // Cierre por clic fuera: no cerrar si el clic cae en learnsetRoot o en el botón toggle
+        if (learnsetRoot && learnsetRoot.activeSelf && Input.GetMouseButtonDown(0))
         {
-            hoverZone = newZone;
-            hoverTimer = hoverZone == HoverZone.None ? 0f : hoverFirstDelay;
-        }
-
-        if (hoverZone == HoverZone.None) return;
-
-        hoverTimer -= Time.unscaledDeltaTime;
-        if (hoverTimer <= 0f)
-        {
-            if (hoverZone == HoverZone.Prev) PrevBox();
-            else NextBox();
-            hoverTimer = hoverRepeatDelay;
+            bool overLearnset = IsPointerOverHierarchy(learnsetRoot);
+            bool overToggle = btnToggleLearnset && IsPointerOverHierarchy(btnToggleLearnset.gameObject);
+            if (!overLearnset && !overToggle) HideLearnset();
         }
     }
 
-    // ---------- API pública ----------
+    // API
     public void PrevBox() => OnPrevBox();
     public void NextBox() => OnNextBox();
 
-    /// <summary>Resetea selección visual y detalles. Úsalo al cerrar el panel.</summary>
     public void ClearSelectionAndUI()
     {
         StorageSlotUI.ClearGlobalSelectionVisuals();
@@ -141,13 +154,14 @@ public class PokemonTeamPanel : MonoBehaviour
         ClearStats();
     }
 
-    // ---------- Callbacks de almacenamiento ----------
+    // Callbacks
     private void HandlePartyChanged()
     {
         partyGrid?.Refresh();
         if (current == null) SelectFirstPartyPokemon();
         RefreshStats(current);
         moveGrid?.Refresh();
+        RefreshLearnsetList(false);
     }
 
     private void HandlePcChanged()
@@ -157,7 +171,7 @@ public class PokemonTeamPanel : MonoBehaviour
         UpdateBoxButtons();
     }
 
-    // ---------- Paginación ----------
+    // Paginación
     private void OnPrevBox()
     {
         if (SM == null || SM.PcStorage == null) return;
@@ -181,43 +195,37 @@ public class PokemonTeamPanel : MonoBehaviour
         if (!btnPrevBox || !btnNextBox || SM == null || SM.PcStorage == null) return;
         int idx = Mathf.Max(0, SM.PcStorage.ActiveBoxIndex);
         int total = Mathf.Max(1, SM.PcStorage.UnlockedBoxCount);
-
         bool prevOn = idx > 0;
         bool nextOn = idx < total - 1;
-
         if (btnPrevBox.gameObject.activeSelf != prevOn) btnPrevBox.gameObject.SetActive(prevOn);
         if (btnNextBox.gameObject.activeSelf != nextOn) btnNextBox.gameObject.SetActive(nextOn);
-
         if (!prevOn && hoverZone == HoverZone.Prev) { hoverZone = HoverZone.None; hoverTimer = 0f; }
         if (!nextOn && hoverZone == HoverZone.Next) { hoverZone = HoverZone.None; hoverTimer = 0f; }
     }
 
-    // ---------- Selección ----------
+    // Selección
     private void OnSelectPokemon(PokemonInstance p)
     {
         if (p == null) return;
         current = p;
         moveGrid?.SetPokemon(current);
         RefreshStats(current);
+        RefreshLearnsetList(learnsetRoot && learnsetRoot.activeSelf);
     }
 
     private void SelectFirstPartyPokemon()
     {
         if (SM == null || SM.PlayerParty == null) { ClearStats(); return; }
-
-        int firstIndex = -1;
-        PokemonInstance first = null;
+        int firstIndex = -1; PokemonInstance first = null;
         var party = SM.PlayerParty;
         for (int i = 0; i < party.MaxCapacity; i++)
         {
             var p = party.GetAt(i);
             if (p != null) { first = p; firstIndex = i; break; }
         }
-
         current = first;
         moveGrid?.SetPokemon(first);
         RefreshStats(first);
-
         if (partyGrid != null && firstIndex >= 0)
         {
             var slots = partyGrid.GetComponentsInChildren<StorageSlotUI>(true);
@@ -229,7 +237,7 @@ public class PokemonTeamPanel : MonoBehaviour
         }
     }
 
-    // ---------- Render ----------
+    // Render
     private void RefreshAll()
     {
         partyGrid?.Refresh();
@@ -248,7 +256,11 @@ public class PokemonTeamPanel : MonoBehaviour
 
     private void RefreshStats(PokemonInstance p)
     {
-        if (p == null) { ClearStats(); return; }
+        if (p == null)
+        {
+            ClearStats();
+            return;
+        }
 
         if (txtName) txtName.text = p.DisplayName;
         if (txtLevel) txtLevel.text = p.level.ToString();
@@ -259,21 +271,18 @@ public class PokemonTeamPanel : MonoBehaviour
         if (imgType1)
         {
             var sp1 = assets ? assets.GetTypeSprite(t1) : null;
-            imgType1.enabled = sp1 != null;
-            imgType1.sprite = sp1;
+            imgType1.enabled = sp1 != null; imgType1.sprite = sp1;
         }
         if (imgType2)
         {
             var sp2 = (t2 != PokemonType.None && assets) ? assets.GetTypeSprite(t2) : null;
-            imgType2.enabled = sp2 != null;
-            imgType2.sprite = sp2;
+            imgType2.enabled = sp2 != null; imgType2.sprite = sp2;
         }
 
         if (imgGender)
         {
             var sg = assets ? assets.GetGenderSprite(p.gender) : null;
-            imgGender.enabled = sg != null;
-            imgGender.sprite = sg;
+            imgGender.enabled = sg != null; imgGender.sprite = sg;
         }
 
         if (txtAbility) txtAbility.text = ResolveAbilityName(p);
@@ -302,7 +311,46 @@ public class PokemonTeamPanel : MonoBehaviour
         if (txtHeldItem) txtHeldItem.text = "Ninguno";
     }
 
-    // ---------- Helpers ----------
+    // Learnset
+    private void ToggleLearnsetPanel()
+    {
+        if (!learnsetRoot) return;
+        bool show = !learnsetRoot.activeSelf;
+        if (show) ShowLearnset(); else HideLearnset();
+    }
+
+    private void ShowLearnset()
+    {
+        if (!learnsetRoot || !learnsetGrid || current == null) return;
+        learnsetRoot.SetActive(true);
+        RefreshLearnsetList(true);
+    }
+
+    private void HideLearnset()
+    {
+        if (learnsetRoot) learnsetRoot.SetActive(false);
+        if (learnsetGrid) learnsetGrid.ClearCustomSource();
+    }
+
+    private void RefreshLearnsetList(bool ensureVisible)
+    {
+        if (!learnsetGrid || current == null) return;
+
+        var list = new List<MoveData>();
+        var sp = current.species;
+        if (sp != null && sp.learnableAttacks != null)
+        {
+            foreach (var e in sp.learnableAttacks)
+                if (e != null && e.attackData != null && e.level <= current.level)
+                    list.Add(e.attackData);
+        }
+        list = list.Distinct().OrderBy(m => m.moveName).ToList();
+
+        learnsetGrid.SetLearnset(current, list);
+        if (ensureVisible && learnsetRoot && !learnsetRoot.activeSelf) learnsetRoot.SetActive(true);
+    }
+
+    // Helpers
     private static string SafeItemName(ItemData item)
     {
         if (item == null) return "Ninguno";
@@ -323,4 +371,17 @@ public class PokemonTeamPanel : MonoBehaviour
         }
         return "";
     }
+
+    private static bool IsPointerOverHierarchy(GameObject root)
+    {
+        if (root == null || EventSystem.current == null) return false;
+        var ped = new PointerEventData(EventSystem.current) { position = Input.mousePosition };
+        var results = new List<RaycastResult>();
+        EventSystem.current.RaycastAll(ped, results);
+        foreach (var r in results)
+            if (r.gameObject != null && r.gameObject.transform.IsChildOf(root.transform))
+                return true;
+        return false;
+    }
 }
+

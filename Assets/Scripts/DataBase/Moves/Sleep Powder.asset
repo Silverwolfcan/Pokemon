@@ -13,12 +13,29 @@ MonoBehaviour:
   m_Name: Sleep Powder
   m_EditorClassIdentifier: 
   moveName: "Somn\xEDfero"
-  description: "El usuario esparce una gran nube de polvo que induce al sue\xF1o
-    alrededor del objetivo."
   type: 3
-  attackCategory: 2
   power: 0
   accuracy: 75
+  attackCategory: 2
   pp: 15
-  hasSecondaryEffect: 0
+  hasSecondaryEffect: 1
+  secondaryChance: 100
+  effectTarget: 0
+  statusToApply: 4
+  stageDelta:
+    attack: 0
+    defense: 0
+    spAttack: 0
+    spDefense: 0
+    speed: 0
+    accuracy: 0
+    evasion: 0
+  causesFlinch: 0
+  flinchChance: 0
+  hasDrain: 0
+  drainPercentOfDamage: 0
+  hasRecoil: 0
+  recoilPercentOfDamage: 0
+  isMultiHit: 0
+  hitsRange: {x: 2, y: 5}
   secondaryEffectDescription: 

@@ -9,8 +9,19 @@ public class StorageSlotUI : MonoBehaviour,
     IPointerClickHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IDropHandler
 {
     private static readonly HashSet<StorageSlotUI> AllSlots = new HashSet<StorageSlotUI>();
-    private void OnEnable() { AllSlots.Add(this); }
-    private void OnDisable() { AllSlots.Remove(this); }
+
+    private void OnEnable()
+    {
+        AllSlots.Add(this);
+        // NO limpiar aquí: el panel selecciona el primero al abrir.
+    }
+
+    private void OnDisable()
+    {
+        // Limpiar selección al salir del panel
+        InternalSetSelected(false);
+        AllSlots.Remove(this);
+    }
 
     public static void ClearGlobalSelectionVisuals()
     {
@@ -34,7 +45,7 @@ public class StorageSlotUI : MonoBehaviour,
     [SerializeField] private TextMeshProUGUI txtLevel;
     [SerializeField] private Image imgSex;
     [SerializeField] private Slider sliderHealth;
-    [SerializeField] private Image sliderFill; // Fill del slider (opcional; se resuelve en runtime)
+    [SerializeField] private Image sliderFill;
     [SerializeField] private TextMeshProUGUI txtHealth;
 
     [Header("Colores HP")]

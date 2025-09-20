@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿// UI/CombatantHUD.cs
+using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
@@ -8,13 +9,13 @@ public class CombatantHUD : MonoBehaviour
 
     [Header("UI")]
     [SerializeField] private Slider hpSlider;
-    [SerializeField] private Image hpFill;              // ← asigna el Fill del slider
+    [SerializeField] private Image hpFill;
     [SerializeField] private TMP_Text nameText;
     [SerializeField] private TMP_Text levelText;
 
     [Header("Estado")]
     [SerializeField] private UIAssetsRegistry assetsRegistry;
-    [SerializeField] private Image primaryStatusIcon;
+    [SerializeField] private Image primaryStatusIcon; // Img_Status
 
     [Header("Anclaje / Seguimiento")]
     [SerializeField] private AnchorMode anchorMode = AnchorMode.RendererBoundsTop;
@@ -45,7 +46,9 @@ public class CombatantHUD : MonoBehaviour
     private CombatantController owner;
     private Camera cam;
     private Canvas myCanvas;
-    private StatusContainer status;
+
+    private StatusContainer status;           // contenedor actual
+    private StatusContainer subscribedTo;     // suscripción a evento
     private int maxHPCached = -1;
     private float lastHpRatio = -1f;
 
@@ -62,7 +65,8 @@ public class CombatantHUD : MonoBehaviour
         if (myCanvas != null && myCanvas.renderMode == RenderMode.WorldSpace && myCanvas.worldCamera == null)
             myCanvas.worldCamera = cam;
 
-        status = target ? target.GetComponent<StatusContainer>() : null;
+        status = ResolveStatusContainer();
+        Resubscribe(status);
 
         if (!hpFill && hpSlider && hpSlider.fillRect)
             hpFill = hpSlider.fillRect.GetComponent<Image>();
@@ -78,9 +82,15 @@ public class CombatantHUD : MonoBehaviour
     public void ForceRebind(PokemonInstance newModel)
     {
         model = newModel;
-        status = target ? target.GetComponent<StatusContainer>() : null;
+        status = ResolveStatusContainer();
+        Resubscribe(status);
         CacheStaticData();
         RefreshAll();
+    }
+
+    private void OnDisable()
+    {
+        Resubscribe(null);
     }
 
     private void LateUpdate()
@@ -94,9 +104,22 @@ public class CombatantHUD : MonoBehaviour
         if (!ReferenceEquals(model, currentModel) && currentModel != null)
         {
             model = currentModel;
-            status = target.GetComponent<StatusContainer>();
+            status = ResolveStatusContainer();
+            Resubscribe(status);
             CacheStaticData();
             RefreshAll();
+        }
+
+        // FIX: si aún no tenemos contenedor, reintentar cada frame.
+        if (status == null)
+        {
+            var retry = ResolveStatusContainer();
+            if (retry != null)
+            {
+                status = retry;
+                Resubscribe(status);
+                ApplyPrimaryIcon(status.Primary); // repintar inmediato
+            }
         }
 
         var targetPos = ComputeAnchorPosition() + worldOffset;
@@ -105,9 +128,44 @@ public class CombatantHUD : MonoBehaviour
             : targetPos;
 
         ApplyBillboard(false);
-
         RefreshHPOnly();
+
+        // Fallback defensivo: repintar según estado actual
         if (status != null) ApplyPrimaryIcon(status.Primary);
+    }
+
+    // ---------- Resolución robusta del StatusContainer ----------
+    private StatusContainer ResolveStatusContainer()
+    {
+        StatusContainer sc = null;
+
+        // 1) Padres del ancla
+        if (target) sc = target.GetComponentInParent<StatusContainer>();
+
+        // 2) Hijos del CombatantController dueño
+        if (!sc && owner) sc = owner.GetComponentInChildren<StatusContainer>(true);
+
+        // 3) Búsqueda por modelo (último recurso)
+        if (!sc && model != null)
+        {
+            var all = Object.FindObjectsByType<StatusContainer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var s in all)
+                if (s != null && ReferenceEquals(s.Pokemon, model))
+                { sc = s; break; }
+        }
+
+        return sc;
+    }
+
+    private void Resubscribe(StatusContainer sc)
+    {
+        if (subscribedTo != null)
+            subscribedTo.OnPrimaryChanged -= ApplyPrimaryIcon;
+
+        subscribedTo = sc;
+
+        if (subscribedTo != null)
+            subscribedTo.OnPrimaryChanged += ApplyPrimaryIcon;
     }
 
     private void CacheStaticData()
@@ -117,7 +175,7 @@ public class CombatantHUD : MonoBehaviour
         if (nameText) nameText.text = model.DisplayName;
         if (levelText) levelText.text = "Nv. " + model.level.ToString();
         if (hpSlider) { hpSlider.minValue = 0; hpSlider.maxValue = maxHPCached; }
-        lastHpRatio = -1f; // fuerza recolor inicial
+        lastHpRatio = -1f;
     }
 
     private void RefreshAll()
@@ -131,7 +189,6 @@ public class CombatantHUD : MonoBehaviour
         if (!hpSlider || model == null) return;
         hpSlider.value = Mathf.Clamp(model.currentHP, 0, maxHPCached <= 0 ? 1 : maxHPCached);
 
-        // Color por ratio
         if (hpFill)
         {
             float ratio = maxHPCached > 0 ? (model.currentHP / (float)maxHPCached) : 0f;
@@ -145,24 +202,27 @@ public class CombatantHUD : MonoBehaviour
         }
     }
 
+    // Evento + pintado
     private void ApplyPrimaryIcon(StatusService.PrimaryStatus s)
     {
         if (!primaryStatusIcon) return;
 
         if (s == StatusService.PrimaryStatus.None)
         {
-            primaryStatusIcon.enabled = false;
-            primaryStatusIcon.gameObject.SetActive(false);
+            primaryStatusIcon.gameObject.SetActive(false);     // oculta cuando no hay estado
+            primaryStatusIcon.sprite = null;                   // limpia sprite
             return;
         }
+
+        primaryStatusIcon.gameObject.SetActive(true);          // activa GameObject
+        primaryStatusIcon.enabled = true;                      // habilita Image
 
         var spr = assetsRegistry ? assetsRegistry.GetStatusSprite(s) : null;
         var col = assetsRegistry ? assetsRegistry.GetStatusColor(s) : Color.white;
 
-        primaryStatusIcon.gameObject.SetActive(true);
-        primaryStatusIcon.enabled = spr != null;
-        primaryStatusIcon.sprite = spr;
+        primaryStatusIcon.sprite = spr;                        // asigna sprite
         primaryStatusIcon.color = col;
+        primaryStatusIcon.preserveAspect = true;
     }
 
     private Vector3 ComputeAnchorPosition()
@@ -220,3 +280,4 @@ public class CombatantHUD : MonoBehaviour
         if (target) { Gizmos.color = Color.yellow; Gizmos.DrawLine(transform.position, target.position); }
     }
 }
+

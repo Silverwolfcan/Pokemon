@@ -17,7 +17,6 @@ public class CombatLogPanel : MonoBehaviour
     void Awake() { Instance = this; }
     void OnDestroy() { if (Instance == this) Instance = null; }
 
-    // --- API ---
     public static void LogMove(PokemonInstance user, string moveName, int damage, bool isAlly, bool hit = true)
     {
         var ic = user?.species?.pokemonSprite;
@@ -45,7 +44,15 @@ public class CombatLogPanel : MonoBehaviour
         Instance?.AddEntry(icon, monName, text, dmg, isAlly);
     }
 
-    // --- Interno ---
+    public void Clear()
+    {
+        if (!content) return;
+        for (int i = content.childCount - 1; i >= 0; i--) Destroy(content.GetChild(i).gameObject);
+        pool.Clear();
+        Canvas.ForceUpdateCanvases();
+        if (scroll) scroll.verticalNormalizedPosition = 1f;
+    }
+
     private void AddEntry(Sprite icon, string monName, string action, string damage, bool isAlly)
     {
         if (!itemPrefab || !content) return;

@@ -1,3 +1,4 @@
+// Servicios/StatusContainer.cs
 using System;
 using UnityEngine;
 
@@ -7,9 +8,10 @@ public class StatusContainer : MonoBehaviour
     [SerializeField] private StatusService.PrimaryStatus _primary = StatusService.PrimaryStatus.None;
     [SerializeField] private bool _isPlayer;
 
-    // Eventos que espera EncounterController
+    // Eventos
     public event Action<int, string> OnResidualDamageRequested;
     public event Action<int, string> OnConfusionSelfHitRequested;
+    public event Action<StatusService.PrimaryStatus> OnPrimaryChanged; // FIX
 
     // Expuestos
     public PokemonInstance Pokemon => _pokemon;
@@ -28,7 +30,6 @@ public class StatusContainer : MonoBehaviour
         if (_pokemon == null && owner) _pokemon = owner.Model;
     }
 
-    // Mantener compatibilidad con EncounterController
     public void Initialize(PokemonInstance pokemon, bool isPlayer)
     {
         _pokemon = pokemon;
@@ -36,7 +37,6 @@ public class StatusContainer : MonoBehaviour
         isAllyCached = isPlayer;
     }
 
-    // No necesitamos estado para logs, pero se deja por compatibilidad
     public void EnableLogCallbacks(bool enable) { }
 
     private bool IsAlly()
@@ -54,12 +54,11 @@ public class StatusContainer : MonoBehaviour
         return isAlly;
     }
 
-    // Llamado por TurnController antes de actuar
+    // Turno: antes de actuar
     public bool OnBeforeAction()
     {
         if (_pokemon == null) return true;
 
-        // Sueño
         if (_primary == StatusService.PrimaryStatus.Sleep)
         {
             if (sleepTurns > 0) sleepTurns--;
@@ -69,10 +68,10 @@ public class StatusContainer : MonoBehaviour
                 return false;
             }
             _primary = StatusService.PrimaryStatus.None;
+            OnPrimaryChanged?.Invoke(_primary); // FIX: notificar
             CombatLogPanel.LogStatus(_pokemon, "Despierta", true, IsAlly(), 0);
         }
 
-        // Parálisis: 25% de no actuar
         if (_primary == StatusService.PrimaryStatus.Paralysis)
         {
             if (UnityEngine.Random.value < 0.25f)
@@ -82,12 +81,12 @@ public class StatusContainer : MonoBehaviour
             }
         }
 
-        // Congelado: 20% de descongelarse
         if (_primary == StatusService.PrimaryStatus.Freeze)
         {
             if (UnityEngine.Random.value < 0.2f)
             {
                 _primary = StatusService.PrimaryStatus.None;
+                OnPrimaryChanged?.Invoke(_primary); // FIX
                 CombatLogPanel.LogStatus(_pokemon, "Se descongela", true, IsAlly(), 0);
             }
             else
@@ -97,7 +96,6 @@ public class StatusContainer : MonoBehaviour
             }
         }
 
-        // Confusión: 1/3 auto-golpe
         if (confused)
         {
             if (confuseTurns > 0) confuseTurns--;
@@ -118,13 +116,12 @@ public class StatusContainer : MonoBehaviour
         return true;
     }
 
-    // Llamado por TurnController al final del turno
+    // Turno: fin de turno
     public void OnEndOfTurn()
     {
         if (_pokemon == null) return;
 
         float frac = StatusService.GetDotFraction(_primary);
-        // PokemonStats es struct: comprobar MaxHP>0 en vez de != null
         if (frac > 0f && _pokemon.stats.MaxHP > 0 && _pokemon.currentHP > 0)
         {
             int amount = Mathf.Max(1, Mathf.FloorToInt(_pokemon.stats.MaxHP * frac));
@@ -137,13 +134,12 @@ public class StatusContainer : MonoBehaviour
         }
     }
 
-    // Aplicación de estado primario
+    // Aplicar estado primario
     public bool TryApplyPrimary(StatusService.PrimaryStatus s)
     {
         if (_pokemon == null) return false;
         if (s == StatusService.PrimaryStatus.None) return false;
 
-        // Compatibilidad: no dependemos de StatusService.CanApply
         if (_primary != StatusService.PrimaryStatus.None)
         {
             CombatLogPanel.LogStatus(_pokemon, s.ToString(), false, IsAlly(), 0);
@@ -151,18 +147,13 @@ public class StatusContainer : MonoBehaviour
         }
 
         _primary = s;
+        OnPrimaryChanged?.Invoke(_primary); // FIX
 
         switch (s)
         {
             case StatusService.PrimaryStatus.Sleep:
                 sleepTurns = UnityEngine.Random.Range(1, 4);
                 break;
-            case StatusService.PrimaryStatus.Freeze:
-                // sin turnos fijos
-                break;
-            case StatusService.PrimaryStatus.Paralysis:
-            case StatusService.PrimaryStatus.Burn:
-            case StatusService.PrimaryStatus.Poison:
             default:
                 break;
         }
@@ -174,6 +165,7 @@ public class StatusContainer : MonoBehaviour
     public void ClearPrimary()
     {
         _primary = StatusService.PrimaryStatus.None;
+        OnPrimaryChanged?.Invoke(_primary); // FIX
     }
 
     public void ApplyConfusion(int turns = 2)
@@ -183,7 +175,6 @@ public class StatusContainer : MonoBehaviour
         CombatLogPanel.LogStatus(_pokemon, "Confusión", true, IsAlly(), 0);
     }
 
-    // Daño por auto-golpe de confusión
     private int ComputeConfusionSelfHitDamage()
     {
         if (_pokemon == null) return 1;

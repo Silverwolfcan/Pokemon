@@ -32,6 +32,8 @@ public class TurnController : MonoBehaviour
     private readonly HashSet<PokemonInstance> playerParticipants = new HashSet<PokemonInstance>();
     private bool expGranted = false;
 
+    public PokemonInstance PlayerModel => player?.Model;
+
     public void Setup(CombatantController playerCbt, CombatantController enemyCbt)
     {
         player = playerCbt;
@@ -40,7 +42,6 @@ public class TurnController : MonoBehaviour
         playerStatus = player?.WorldTransform ? player.WorldTransform.GetComponent<StatusContainer>() : null;
         enemyStatus = enemy?.WorldTransform ? enemy.WorldTransform.GetComponent<StatusContainer>() : null;
 
-        // Hooks de estado para log (opcional si existen)
         if (playerStatus) playerStatus.EnableLogCallbacks(true);
         if (enemyStatus) enemyStatus.EnableLogCallbacks(true);
 
@@ -217,7 +218,15 @@ public class TurnController : MonoBehaviour
         float chance = 0.5f + (spdP > spdE ? 0.25f : 0f);
         bool success = UnityEngine.Random.value <= Mathf.Clamp01(chance);
         yield return new WaitForSeconds(0.2f);
-        if (success) CombatService.Instance?.ForceEndEncounter();
+        if (success)
+        {
+            CombatService.Instance?.ForceEndEncounter();
+        }
+        else
+        {
+            var mon = player?.Model;
+            CombatLogPanel.LogCustom(mon?.species?.pokemonSprite, mon?.DisplayName ?? "?", "No puede huir", "", true);
+        }
     }
 
     private IEnumerator DoSwitch(CombatantController who, PokemonInstance replacement)
@@ -278,13 +287,24 @@ public class TurnController : MonoBehaviour
             var r = ItemEffectsUtility.ApplyHealingItem(model, heal, mvIndex);
             applied = r == ItemUseResult.Applied;
             if (applied)
+            {
                 CombatLogPanel.LogCustom(model.species?.pokemonSprite, model.DisplayName, $"Usa {heal.itemName}", "", usedByPlayer);
-        }
 
-        if (applied) TryConsumeFromInventory(item, 1);
+                // consumir con la API específica si existe
+                var inv = InventoryManager.Instance;
+                if (inv != null) inv.UseItem(heal);
+                else TryConsumeFromInventory(item, 1);
+            }
+        }
+        else
+        {
+            // otros tipos: si aplican efecto, consumir vía fallback
+            if (applied) TryConsumeFromInventory(item, 1);
+        }
 
         yield return new WaitForSeconds(0.2f);
     }
+
 
     private IEnumerator ExecuteMove(CombatantController attacker, CombatantController defender, int moveIndex, bool isPlayer)
     {
@@ -350,11 +370,6 @@ public class TurnController : MonoBehaviour
         }
 
         var gains = ExperienceService.DistributeAndApply(partyList, playerParticipants, player?.Model, enemy.Model, false);
-        foreach (var g in gains)
-        {
-            // opcional: mostrar subida de nivel aquí si quieres
-        }
-
         expGranted = true;
     }
 

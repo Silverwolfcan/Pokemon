@@ -13,11 +13,29 @@ MonoBehaviour:
   m_Name: Poison Powder
   m_EditorClassIdentifier: 
   moveName: Polvo Veneno
-  description: El usuario dispersa una nube de polvo venenoso que envenena al objetivo.
   type: 7
-  attackCategory: 2
   power: 0
   accuracy: 75
+  attackCategory: 2
   pp: 35
-  hasSecondaryEffect: 0
+  hasSecondaryEffect: 1
+  secondaryChance: 100
+  effectTarget: 0
+  statusToApply: 1
+  stageDelta:
+    attack: 0
+    defense: 0
+    spAttack: 0
+    spDefense: 0
+    speed: 0
+    accuracy: 0
+    evasion: 0
+  causesFlinch: 0
+  flinchChance: 0
+  hasDrain: 0
+  drainPercentOfDamage: 0
+  hasRecoil: 0
+  recoilPercentOfDamage: 0
+  isMultiHit: 0
+  hitsRange: {x: 2, y: 5}
   secondaryEffectDescription: 

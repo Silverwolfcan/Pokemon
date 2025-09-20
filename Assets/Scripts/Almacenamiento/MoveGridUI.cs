@@ -1,10 +1,11 @@
+// UI/MoveGridUI.cs
 using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 public class MoveGridUI : MonoBehaviour
 {
-    public enum GridMode { Edit, Combat }
+    public enum GridMode { Edit, Combat, Learnset }
 
     [Header("Refs")]
     [SerializeField] private Transform content;
@@ -28,6 +29,24 @@ public class MoveGridUI : MonoBehaviour
     private int nonNullVisualCount = 0;
     private readonly List<MoveSlotUI> liveSlots = new();
 
+    // Fuente alternativa para "aprendibles"
+    private bool useCustom = false;
+    private readonly List<MoveInstance> customList = new();
+
+    // Registro global de grids para drop cruzado
+    private static readonly List<MoveGridUI> s_all = new();
+
+    private void OnEnable()
+    {
+        if (!s_all.Contains(this)) s_all.Add(this);
+    }
+    private void OnDisable()
+    {
+        foreach (var s in liveSlots) if (s) s.DetachGrid();
+        liveSlots.Clear();
+        if (s_all.Contains(this)) s_all.Remove(this);
+    }
+
     private void Awake()
     {
         if (!content) content = transform;
@@ -46,18 +65,33 @@ public class MoveGridUI : MonoBehaviour
         return t;
     }
 
-    private void OnDisable()
-    {
-        foreach (var s in liveSlots) if (s) s.DetachGrid();
-        liveSlots.Clear();
-    }
-
     public void SetPokemon(PokemonInstance p)
     {
         current = p;
+        useCustom = false;
+        customList.Clear();
         Refresh();
     }
     public void SetMode(GridMode m) => mode = m;
+
+    public void SetLearnset(PokemonInstance owner, List<MoveData> learnable)
+    {
+        current = owner;
+        useCustom = true;
+        customList.Clear();
+        if (learnable != null)
+            foreach (var md in learnable)
+                if (md != null) customList.Add(new MoveInstance(md));
+        mode = GridMode.Learnset;
+        Refresh();
+    }
+    public void ClearCustomSource()
+    {
+        useCustom = false;
+        customList.Clear();
+        if (mode == GridMode.Learnset) mode = GridMode.Edit; // vuelve a modo por defecto si era aprendibles
+        Refresh();
+    }
 
     public void Refresh()
     {
@@ -71,6 +105,27 @@ public class MoveGridUI : MonoBehaviour
 
         for (int i = content.childCount - 1; i >= 0; i--)
             Destroy(content.GetChild(i).gameObject);
+
+        if (current == null && !useCustom) return;
+
+        if (useCustom && mode == GridMode.Learnset)
+        {
+            // Lista arbitraria de tamaño variable
+            for (int vis = 0; vis < customList.Count; vis++)
+            {
+                var go = Instantiate(slotPrefab, content);
+                var slot = go.GetComponent<MoveSlotUI>();
+                if (!slot) { Destroy(go); continue; }
+                slot.AttachGrid(this);
+                slot.SetVisualIndex(vis);
+                slot.Setup(customList[vis], current, transparentIfEmpty: false);
+                liveSlots.Add(slot);
+            }
+            // visibleToModel no aplica; rellena con -1
+            for (int i = 0; i < customList.Count; i++) visibleToModel.Add(-1);
+            nonNullVisualCount = customList.Count;
+            return;
+        }
 
         if (current == null) return;
 
@@ -88,7 +143,7 @@ public class MoveGridUI : MonoBehaviour
         {
             var go = Instantiate(slotPrefab, content);
             var slot = go.GetComponent<MoveSlotUI>();
-            if (!slot) { Debug.LogError("[MoveGridUI] El slotPrefab no tiene MoveSlotUI."); Destroy(go); continue; }
+            if (!slot) { Destroy(go); continue; }
 
             slot.AttachGrid(this);
             slot.SetVisualIndex(vis);
@@ -138,7 +193,7 @@ public class MoveGridUI : MonoBehaviour
         return Mathf.Clamp(requestedIndex, 0, max);
     }
 
-    public void NotifyDrop(int fromVisual, int toVisual)
+    public void NotifyDropWithinGrid(int fromVisual, int toVisual)
     {
         if (mode != GridMode.Edit) return;
         if (current == null) { Refresh(); return; }
@@ -163,6 +218,48 @@ public class MoveGridUI : MonoBehaviour
         current.CompactMoves();
         try { SaveManager.Instance?.ManualSave(); } catch { }
         Refresh();
+    }
+
+    // Drop externo: desde panel "aprendibles"
+    public void ApplyIncomingMoveFromLearnset(MoveData data, int toVisual)
+    {
+        if (current == null || data == null) return;
+        if (mode != GridMode.Edit) return;
+
+        int modelIndex = GetModelIndexFromVisual(toVisual);
+        if (modelIndex < 0)
+        {
+            int last = LastNonNullIndex(current);
+            modelIndex = Mathf.Clamp(last + 1, 0, 3);
+        }
+
+        current.LearnMove(data, modelIndex);
+        current.CompactMoves();
+        try { SaveManager.Instance?.ManualSave(); } catch { }
+        Refresh();
+    }
+
+    public int GetModelIndexFromVisual(int visualIndex)
+    {
+        if (visualIndex < 0 || visualIndex >= visibleToModel.Count) return -1;
+        return visibleToModel[visualIndex];
+    }
+
+    // Utilería registro y búsqueda de target por punto
+    public static MoveGridUI FindGridAtScreenPoint(Vector2 screenPos, Canvas rootCanvas, GridMode wantedMode)
+    {
+        Camera cam = rootCanvas && rootCanvas.renderMode != RenderMode.ScreenSpaceOverlay ? rootCanvas.worldCamera : null;
+        foreach (var g in s_all)
+        {
+            if (g == null || !g.isActiveAndEnabled) continue;
+            if (g.Mode != wantedMode) continue;
+            var rt = g.GetComponent<RectTransform>();
+            if (!rt) rt = g.ContentRT;
+            if (!rt) continue;
+            if (RectTransformUtility.RectangleContainsScreenPoint(rt, screenPos, cam))
+                return g;
+        }
+        return null;
     }
 
     public void NotifyClick(int visualIndex)

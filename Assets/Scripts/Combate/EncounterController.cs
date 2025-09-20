@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 public class EncounterController : MonoBehaviour
 {
@@ -21,16 +22,13 @@ public class EncounterController : MonoBehaviour
 
     [Header("Desalojo de salvajes dentro del ring")]
     [SerializeField] private float evictionClearance = 1.5f;
-    [SerializeField] private float evictionSpeed = 6f;
     [SerializeField] private float evictionScanInterval = 0.75f;
 
-    // Refs de escena/vivos
     private Transform playerMonTf, wildMonTf;
     private CombatantController playerCbt, enemyCbt;
     private TurnController turnCtl;
     private CombatBoundary boundary;
 
-    // HUD instanciados (si procede)
     private GameObject playerHudGO, enemyHudGO;
 
     private Action<EncounterResult> onEndCallback;
@@ -38,12 +36,24 @@ public class EncounterController : MonoBehaviour
     private Vector3 ringCenter;
     private bool ended = false;
 
-    // Desalojo
     private readonly Dictionary<CreatureBehavior, Coroutine> activeEvictions = new();
     private Coroutine evictionScannerCo;
 
-    // Expuesto para servicios/UI
     public TurnController Turn => turnCtl;
+
+    // Estado global para IA de mundo
+    public static bool RingActive { get; private set; }
+    public static Vector3 RingCenterS { get; private set; }
+    public static float RingRadiusS { get; private set; }
+
+    public static bool IsRingActive => RingActive;
+    public static bool IsInsideRing(Vector3 pos)
+    {
+        if (!RingActive) return false;
+        var p = pos; p.y = 0f;
+        var c = RingCenterS; c.y = 0f;
+        return Vector3.Distance(p, c) < RingRadiusS - 0.0001f;
+    }
 
     public void ApplyConfig(float? offsetFromCenter = null, float? playerRingRadius = null)
     {
@@ -64,22 +74,25 @@ public class EncounterController : MonoBehaviour
         boundary = gameObject.AddComponent<CombatBoundary>();
         boundary.Setup(() => GetPlayerPosition(), (pos) => SetPlayerPosition(pos), () => ringCenter, ringRadiusForPlayer);
 
-        // Combatants sobre ESTE GO (diseño original del proyecto)
+        // Eliminar cualquier “pared” física previa
+        StripPhysicalBlockers();
+
+        RingActive = true;
+        RingCenterS = ringCenter;
+        RingRadiusS = ringRadiusForPlayer;
+
         playerCbt = gameObject.AddComponent<CombatantController>();
         playerCbt.Init(playerMonTf, playerMon, true);
 
         enemyCbt = gameObject.AddComponent<CombatantController>();
         enemyCbt.Init(wildMonTf, wildMon, false);
 
-        // Estados: en los TRANSFORMS reales, no en el Encounter (evita duplicados)
-        var pStatus = playerMonTf.GetComponent<StatusContainer>();
-        if (pStatus == null) pStatus = playerMonTf.gameObject.AddComponent<StatusContainer>();
+        var pStatus = playerMonTf.GetComponent<StatusContainer>() ?? playerMonTf.gameObject.AddComponent<StatusContainer>();
         pStatus.Initialize(playerMon, true);
         pStatus.OnResidualDamageRequested += (amt, tag) => ApplyDirectDamage(playerCbt, amt, tag);
         pStatus.OnConfusionSelfHitRequested += (amt, tag) => ApplyDirectDamage(playerCbt, amt, tag);
 
-        var eStatus = wildMonTf.GetComponent<StatusContainer>();
-        if (eStatus == null) eStatus = wildMonTf.gameObject.AddComponent<StatusContainer>();
+        var eStatus = wildMonTf.GetComponent<StatusContainer>() ?? wildMonTf.gameObject.AddComponent<StatusContainer>();
         eStatus.Initialize(wildMon, false);
         eStatus.OnResidualDamageRequested += (amt, tag) => ApplyDirectDamage(enemyCbt, amt, tag);
         eStatus.OnConfusionSelfHitRequested += (amt, tag) => ApplyDirectDamage(enemyCbt, amt, tag);
@@ -109,7 +122,6 @@ public class EncounterController : MonoBehaviour
 
         while (!ended)
         {
-            // KO del jugador: forzar cambio si hay relevo
             if (playerCbt.IsFainted)
             {
                 if (HasAliveReplacementForPlayer())
@@ -155,7 +167,6 @@ public class EncounterController : MonoBehaviour
         }
     }
 
-    // ¿Hay reemplazo vivo en la party del jugador?
     private bool HasAliveReplacementForPlayer()
     {
         var party = PokemonStorageManager.Instance ? PokemonStorageManager.Instance.PlayerParty : null;
@@ -167,7 +178,6 @@ public class EncounterController : MonoBehaviour
         }
         return false;
     }
-
 
     private IEnumerator CoPositionCombatants()
     {
@@ -234,6 +244,11 @@ public class EncounterController : MonoBehaviour
         ToggleCombatOn(playerMonTf, false);
         ToggleCombatOn(wildMonTf, false);
 
+        StopEviction();
+
+        // Limpieza por seguridad
+        StripPhysicalBlockers();
+
         if (boundary) Destroy(boundary);
         if (playerHudGO) Destroy(playerHudGO);
         if (enemyHudGO) Destroy(enemyHudGO);
@@ -241,13 +256,18 @@ public class EncounterController : MonoBehaviour
         playerCbt?.CleanupAfterBattle();
         enemyCbt?.CleanupAfterBattle();
 
+        RingActive = false;
+
+        // ← Cursor vuelve a modo gameplay al TERMINAR el combate
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+
         try { onEndCallback?.Invoke(result); }
         catch (Exception e) { Debug.LogError($"[Encounter] Callback error: {e}"); }
 
         Destroy(gameObject);
     }
 
-    // -------------------- Señales de captura --------------------
     public void NotifyCaptureSuccess()
     {
         if (ended) return;
@@ -259,11 +279,9 @@ public class EncounterController : MonoBehaviour
         if (turnCtl != null) turnCtl.QueueCapture();
     }
 
-    // -------------------- HUD helpers --------------------
     private void TrySpawnHUDs(Transform playerTf, PokemonInstance playerModel,
                               Transform enemyTf, PokemonInstance enemyModel)
     {
-        // 1) Si hay prefab, úsalo
         if (combatantHUDPrefab != null)
         {
             playerHudGO = Instantiate(combatantHUDPrefab);
@@ -274,7 +292,6 @@ public class EncounterController : MonoBehaviour
             return;
         }
 
-        // 2) Fallback: rebindea HUDs existentes en la escena (primeros dos)
         var huds = FindObjectsByType<CombatantHUD>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         if (huds != null && huds.Length > 0)
         {
@@ -318,8 +335,6 @@ public class EncounterController : MonoBehaviour
         foreach (var kv in activeEvictions)
         {
             if (kv.Value != null) StopCoroutine(kv.Value);
-            var beh = kv.Key;
-            if (beh != null && beh.isActiveAndEnabled) beh.SetCombatMode(false);
         }
         activeEvictions.Clear();
     }
@@ -341,66 +356,48 @@ public class EncounterController : MonoBehaviour
             if (IsSameRoot(beh.transform, playerMonTf) || IsSameRoot(beh.transform, wildMonTf)) continue;
 
             float dist = Vector3.Distance(beh.transform.position, ringCenter);
-            if (dist <= ringRadiusForPlayer)
-                if (!activeEvictions.ContainsKey(beh))
-                    activeEvictions[beh] = StartCoroutine(CoTemporaryEvict(beh));
+            if (dist <= ringRadiusForPlayer && !activeEvictions.ContainsKey(beh))
+                activeEvictions[beh] = StartCoroutine(CoTemporaryEvict(beh));
         }
     }
     private IEnumerator CoTemporaryEvict(CreatureBehavior beh)
     {
         if (beh == null) yield break;
-        beh.SetCombatMode(true);
 
         var tf = beh.transform;
-        Vector3 start = tf.position;
-        Vector3 radial = (tf.position - ringCenter); radial.y = 0f;
+        Vector3 radial = tf.position - ringCenter; radial.y = 0f;
         if (radial.sqrMagnitude < 0.0001f) radial = UnityEngine.Random.onUnitSphere;
         radial.y = 0f; radial.Normalize();
 
         Vector3 target = ringCenter + radial * (ringRadiusForPlayer + Mathf.Max(0.1f, evictionClearance));
-        target.y = start.y;
+        target.y = tf.position.y;
 
-        float maxTime = 2.5f + (Vector3.Distance(start, target) / Mathf.Max(0.01f, evictionSpeed));
-        float t = 0f;
-
-        while (!ended && beh != null && tf != null)
+        var agent = beh.GetComponent<NavMeshAgent>();
+        bool warped = false;
+        if (agent && agent.isOnNavMesh &&
+            NavMesh.SamplePosition(target, out var hit, 2f, NavMesh.AllAreas))
         {
-            float step = evictionSpeed * Time.deltaTime;
-            tf.position = Vector3.MoveTowards(tf.position, target, step);
-
-            Vector3 dir = (target - tf.position); dir.y = 0f;
-            if (dir.sqrMagnitude > 0.0001f)
-            {
-                var look = Quaternion.LookRotation(dir);
-                tf.rotation = Quaternion.Slerp(tf.rotation, look, 10f * Time.deltaTime);
-            }
-
-            Vector3 flat = tf.position - ringCenter; flat.y = 0f;
-            if (flat.magnitude >= ringRadiusForPlayer + Mathf.Max(0.1f, evictionClearance) - 0.05f) break;
-
-            t += Time.deltaTime;
-            if (t >= maxTime) break;
-            yield return null;
+            agent.Warp(hit.position);
+            warped = true;
         }
+        if (!warped) tf.position = target;
 
-        if (!ended && beh != null && beh.isActiveAndEnabled) beh.SetCombatMode(false);
+        // orientar hacia fuera
+        var dir = (tf.position - ringCenter); dir.y = 0f;
+        if (dir.sqrMagnitude > 0.0001f) tf.rotation = Quaternion.LookRotation(dir);
+
         activeEvictions.Remove(beh);
+        yield break;
     }
 
-    private static bool IsSameRoot(Transform a, Transform b)
-    {
-        if (a == null || b == null) return false;
-        return a.root == b.root;
-    }
+    // ──────────────────────────────────────────────────────────────────────────
+    // utilidades
+    private static bool IsSameRoot(Transform a, Transform b) => a && b && a.root == b.root;
 
-    // Daño directo solicitado por estados (DOT/confusión)
     private void ApplyDirectDamage(CombatantController who, int amount, string tag = "[Status]")
     {
-        var mon = who?.Model;
-        if (mon == null) return;
-        int before = mon.currentHP;
+        var mon = who?.Model; if (mon == null) return;
         mon.currentHP = Mathf.Max(0, mon.currentHP - Mathf.Max(0, amount));
-        Debug.Log($"[Damage]{tag} {mon.DisplayName} -{Mathf.Max(0, amount)} ({mon.currentHP}/{mon.stats.MaxHP})");
     }
 
     private Vector3 GetPlayerPosition()
@@ -408,19 +405,24 @@ public class EncounterController : MonoBehaviour
         var pc = FindAnyObjectByType<PlayerController>();
         return pc ? pc.transform.position : Vector3.zero;
     }
-
     private void SetPlayerPosition(Vector3 p)
     {
         var pc = FindAnyObjectByType<PlayerController>();
         if (pc) pc.transform.position = p;
     }
-
     private void ToggleCombatOn(Transform tf, bool active)
     {
-        if (tf == null) return;
+        if (!tf) return;
         var pcb = tf.GetComponent<PlayerController>() ?? tf.GetComponentInParent<PlayerController>(true);
-        if (pcb != null) pcb.EnableControls(!active);
+        if (pcb) pcb.EnableControls(!active);
         var wild = tf.GetComponent<CreatureBehavior>() ?? tf.GetComponentInParent<CreatureBehavior>(true);
-        if (wild != null) wild.SetCombatMode(active);
+        if (wild) wild.SetCombatMode(active);
+    }
+
+    // Elimina colliders/obstáculos que pudieran quedar en el GO del encuentro
+    private void StripPhysicalBlockers()
+    {
+        foreach (var c in GetComponentsInChildren<Collider>(true)) Destroy(c);
+        foreach (var o in GetComponentsInChildren<NavMeshObstacle>(true)) Destroy(o);
     }
 }

@@ -36,7 +36,6 @@ public static class MoveExecutor
             ? BattleStageService.GetModifiedStat(atk, atk.stats.Attack, BattleStageService.StatKind.Attack)
             : BattleStageService.GetModifiedStat(atk, atk.stats.SpAttack, BattleStageService.StatKind.SpAttack);
 
-        // quemado reduce ataque físico
         if (move.attackCategory == AttackType.Physical)
         {
             var scAtk = FindContainerFor(atk);
@@ -138,23 +137,16 @@ public static class MoveExecutor
         }
     }
 
+    // FIX: localizar el contenedor correcto sin reflexión y sin perder referencias
     private static StatusContainer FindContainerFor(PokemonInstance model)
     {
-        var all = Object.FindObjectsByType<StatusContainer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        if (model == null) return null;
+        var all = Object.FindObjectsByType<StatusContainer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         for (int i = 0; i < all.Length; i++)
         {
             var sc = all[i];
             if (sc == null) continue;
-            var t = typeof(StatusContainer);
-            var p = t.GetProperty("Model", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-            PokemonInstance m = null;
-            if (p != null) m = p.GetValue(sc) as PokemonInstance;
-            if (m == null)
-            {
-                var f = t.GetField("_pokemon", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (f != null) m = f.GetValue(sc) as PokemonInstance;
-            }
-            if (ReferenceEquals(m, model)) return sc;
+            if (ReferenceEquals(sc.Pokemon, model)) return sc;
         }
         return null;
     }

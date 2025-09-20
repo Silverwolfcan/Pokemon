@@ -22,18 +22,35 @@ public class CombatUIController : MonoBehaviour
     [SerializeField] private BagPanel bagPanel;
     [SerializeField] private GameObject bagPanelRoot;
 
+    [Header("Log de combate")]
+    [SerializeField] private GameObject combatLogRoot;   // Asignar el root del panel de logs
+    [SerializeField] private bool autoFindCombatLog = true;
+
     private PlayerController playerController;
     private bool captureMode = false;
     private bool turnBound = false;
 
+    // Estado log↔bolsa
+    private bool logWasActiveBeforeBag = true;
+    private bool bagOpen = false;
+
     private void OnEnable()
     {
+        if (autoFindCombatLog && combatLogRoot == null)
+        {
+            var inst = CombatLogPanel.Instance;
+            if (inst != null) combatLogRoot = inst.gameObject;
+        }
+
         playerController = FindAnyObjectByType<PlayerController>(FindObjectsInactive.Exclude);
         BindButtons();
         BindTurn(ResolveTurn());
         captureMode = false;
+        bagOpen = false;
         ShowMain();
         SetCursorUI();
+        // El log visible por defecto
+        SetLogVisible(true);
     }
 
     private void OnDisable()
@@ -41,11 +58,11 @@ public class CombatUIController : MonoBehaviour
         UnbindTurn(ResolveTurn());
         captureMode = false;
         turnBound = false;
+        bagOpen = false;
     }
 
     private void Update()
     {
-        // Re-vincula si el Encounter acaba de crearse
         if (!turnBound && ResolveTurn() != null) BindTurn(ResolveTurn());
 
         if (Input.GetKeyDown(KeyCode.Escape))
@@ -80,33 +97,6 @@ public class CombatUIController : MonoBehaviour
         turn.OnEnemyTurnStart -= OnEnemyTurnStart;
     }
 
-    // --- wiring botones ---
-    private void BindButtons()
-    {
-        if (btnFight) { btnFight.onClick.RemoveAllListeners(); btnFight.onClick.AddListener(OpenMoves); }
-        if (btnTeam) { btnTeam.onClick.RemoveAllListeners(); btnTeam.onClick.AddListener(OpenTeam); }
-        if (btnCapture) { btnCapture.onClick.RemoveAllListeners(); btnCapture.onClick.AddListener(EnterCaptureMode); }
-        if (btnBag) { btnBag.onClick.RemoveAllListeners(); btnBag.onClick.AddListener(OpenBag); }
-        if (btnRun)
-        {
-            btnRun.onClick.RemoveAllListeners();
-            btnRun.onClick.AddListener(() =>
-            {
-                var turn = ResolveTurn();
-                if (turn == null) return;
-                turn.QueueRun();                // encola huida en el Turn válido
-                ShowNone();
-                SetCursorGameplay();
-            });
-        }
-
-        if (moveGrid)
-        {
-            moveGrid.OnMoveSelected -= OnMoveChosen;
-            moveGrid.OnMoveSelected += OnMoveChosen;
-        }
-    }
-
     // --- callbacks de turno ---
     private void OnPlayerTurnStart()
     {
@@ -114,13 +104,16 @@ public class CombatUIController : MonoBehaviour
         playerController?.EnableControls(false);
         ShowMain();
         SetCursorUI();
+        if (!bagOpen) SetLogVisible(true);
     }
 
     private void OnEnemyTurnStart()
     {
         captureMode = false;
         ShowNone();
-        SetCursorGameplay();
+        // Cursor permanece libre durante el combate
+        SetCursorUI();
+        if (!bagOpen) SetLogVisible(true);
     }
 
     // --- paneles ---
@@ -131,6 +124,7 @@ public class CombatUIController : MonoBehaviour
         if (bagPanel) bagPanel.Close();
         if (panelMoves) panelMoves.SetActive(false);
         if (panelMain) panelMain.SetActive(true);
+        if (!bagOpen) SetLogVisible(true);
     }
 
     private void ShowNone()
@@ -139,11 +133,12 @@ public class CombatUIController : MonoBehaviour
         if (panelMoves) panelMoves.SetActive(false);
         if (teamPanelRoot) teamPanelRoot.SetActive(false);
         if (bagPanelRoot) bagPanelRoot.SetActive(false);
+        // El log lo gestiona quien abre/cierra bolsa
     }
 
     private void OpenMoves()
     {
-        if (!moveGrid) { Debug.LogWarning("[CombatUI] Falta MoveGridUI."); return; }
+        if (!moveGrid) { Debug.LogWarning("[UI] Falta MoveGridUI."); return; }
         moveGrid.SetMode(MoveGridUI.GridMode.Combat);
 
         var all = FindObjectsByType<CombatantController>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
@@ -152,14 +147,16 @@ public class CombatUIController : MonoBehaviour
         if (panelMain) panelMain.SetActive(false);
         if (panelMoves) panelMoves.SetActive(true);
         SetCursorUI();
+        if (!bagOpen) SetLogVisible(true);
     }
 
     private void OnMoveChosen(int modelIndex)
     {
         var turn = ResolveTurn();
-        if (turn != null) turn.QueueMove(modelIndex); // encola SIEMPRE aquí
+        if (turn != null) turn.QueueMove(modelIndex);
         ShowNone();
-        SetCursorGameplay();
+        // Cursor sigue libre en combate
+        SetCursorUI();
     }
 
     private void OpenTeam()
@@ -167,6 +164,7 @@ public class CombatUIController : MonoBehaviour
         if (panelMain) panelMain.SetActive(false);
         if (teamPanelRoot) teamPanelRoot.SetActive(true);
         SetCursorUI();
+        if (!bagOpen) SetLogVisible(true);
     }
 
     private void EnterCaptureMode()
@@ -174,7 +172,9 @@ public class CombatUIController : MonoBehaviour
         captureMode = true;
         ShowNone();
         playerController?.EnableControls(true);
-        SetCursorGameplay();
+        // Mantener cursor libre incluso en modo captura
+        SetCursorUI();
+        if (!bagOpen) SetLogVisible(true);
     }
 
     private void ExitCaptureModeToMain()
@@ -189,6 +189,11 @@ public class CombatUIController : MonoBehaviour
     {
         if (!bagPanel) return;
 
+        bagOpen = true;
+        // Guardar estado y ocultar log
+        logWasActiveBeforeBag = combatLogRoot ? combatLogRoot.activeSelf : true;
+        SetLogVisible(false);
+
         if (panelMain) panelMain.SetActive(false);
         if (bagPanelRoot) bagPanelRoot.SetActive(true);
         bagPanel.gameObject.SetActive(true);
@@ -199,12 +204,17 @@ public class CombatUIController : MonoBehaviour
                 var turn = ResolveTurn();
                 if (turn != null) turn.QueueUseItem(item, target);
                 bagPanel.Close();
+                bagOpen = false;
+                RestoreLogAfterBag();
                 ShowNone();
-                SetCursorGameplay();
+                // Mantener cursor libre tras acción
+                SetCursorUI();
             },
             onClose: () =>
             {
                 bagPanel.Close();
+                bagOpen = false;
+                RestoreLogAfterBag();
                 ShowMain();
                 SetCursorUI();
             }
@@ -226,12 +236,30 @@ public class CombatUIController : MonoBehaviour
     private void CloseAllSubmenusToMain()
     {
         if (captureMode) { ExitCaptureModeToMain(); return; }
+
+        bool wasBag = bagOpen || (bagPanelRoot && bagPanelRoot.activeInHierarchy);
+
         if (panelMoves) panelMoves.SetActive(false);
         if (teamPanelRoot) teamPanelRoot.SetActive(false);
         if (bagPanel) bagPanel.Close();
         if (bagPanelRoot) bagPanelRoot.SetActive(false);
+
+        bagOpen = false;
+        if (wasBag) RestoreLogAfterBag();
+
         ShowMain();
         SetCursorUI();
+    }
+
+    private void SetLogVisible(bool visible)
+    {
+        if (!combatLogRoot) return;
+        if (combatLogRoot.activeSelf != visible) combatLogRoot.SetActive(visible);
+    }
+
+    private void RestoreLogAfterBag()
+    {
+        SetLogVisible(logWasActiveBeforeBag);
     }
 
     private static void SetCursorUI()
@@ -239,9 +267,32 @@ public class CombatUIController : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
     }
-    private static void SetCursorGameplay()
+
+    // wiring botones
+    private void BindButtons()
     {
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
+        if (btnFight) { btnFight.onClick.RemoveAllListeners(); btnFight.onClick.AddListener(OpenMoves); }
+        if (btnTeam) { btnTeam.onClick.RemoveAllListeners(); btnTeam.onClick.AddListener(OpenTeam); }
+        if (btnCapture) { btnCapture.onClick.RemoveAllListeners(); btnCapture.onClick.AddListener(EnterCaptureMode); }
+        if (btnBag) { btnBag.onClick.RemoveAllListeners(); btnBag.onClick.AddListener(OpenBag); }
+        if (btnRun)
+        {
+            btnRun.onClick.RemoveAllListeners();
+            btnRun.onClick.AddListener(() =>
+            {
+                var turn = ResolveTurn();
+                if (turn == null) return;
+                turn.QueueRun();
+                ShowNone();
+                // Mantener cursor libre mientras el encuentro no termine
+                SetCursorUI();
+            });
+        }
+
+        if (moveGrid)
+        {
+            moveGrid.OnMoveSelected -= OnMoveChosen;
+            moveGrid.OnMoveSelected += OnMoveChosen;
+        }
     }
 }
